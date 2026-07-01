@@ -127,32 +127,59 @@ Step 11: 代码+配置+合规 → 硬编码/环境变量/HTTPS/CORS
 
 ---
 
-## 五、缺陷级别定义
+## 五、合约检测流水线（严格按序）
 
-| 级别 | 含义 | 响应时间 |
-|------|------|---------|
-| **Critical** | 资金丢失/无限铸币/RCE/私钥泄露 | 立刻修 |
-| **High** | 合约逻辑漏洞/权限逃逸/重入 | 24h |
-| **Medium** | 特定条件下可触发/缺少输入校验 | 本周 |
-| **Low** | 最佳实践/代码风格/gas 优化 | 可选 |
-| **Info** | lint 噪音/已知 false positive | 忽略 |
+```
+forge build --sizes → slither → aderyn → mythril → semgrep → solhint → forge coverage → forge test
+                                                                                         ↓
+                                                                                    security 审查
+```
+> **安全检测由 security-check (预检层) 和 security (审查层) 两个子 Agent 分工完成。**
+
+---
+
+## 六、semgrep vs solhint 区别
+
+| 维度 | semgrep | solhint |
+|------|---------|---------|
+| 定位 | 通用模式扫描引擎 | Solidity 专用代码风格检查器 |
+| 支持语言 | JS/TS/Python/Solidity/Bash... | 仅 Solidity |
+| 检测深度 | 中 — 已知模式/签名匹配（安全+最佳实践） | 浅 — 代码格式/写法规范 |
+| 典型发现 | 重入模式、未检查返回值、常量 gas | 命名规范、pragma 版本、import 排序 |
+| 类比 | "代码正则搜索引擎" | "Solidity 的 ESLint" |
+
+> **两者互补**：semgrep 找安全问题模式，solhint 保证代码风格一致性。
+
+---
+
+## 七、缺陷严重度分级
+
+| 级别 | 定义 | 响应 | 示例 |
+|------|------|------|------|
+| 🔴 **Critical** | 可直接盗取资金/永久冻结 | 立刻修，阻塞部署 | 重入/未检查调用/签名重放 |
+| 🟠 **High** | 资金损失/权限提升，有前提 | 24h 内修 | 溢出/访问控制缺陷/预言机操纵 |
+| 🟡 **Medium** | 功能异常/DOS/数据损坏 | 本周内修 | 无验证 transfer/竞争条件 |
+| 🟢 **Low** | 最佳实践/代码气味 | 下迭代修复 | 未使用变量/缺失 natspec |
+| 🔵 **Info** | 信息性 | 忽略 | 命名建议/Gas 优化 |
 
 > 部署前要求：Critical=0, High=0, Forge test 通过率=100%, Coverage≥75%
 
 ---
 
-## 六、部署前 Checklist（逐项确认）
+## 八、部署前 Checklist（逐项确认）
 
-| # | 检查项 | 工具 | 目标 |
-|---|--------|------|------|
-| 1 | 所有 external/public 函数有单元测试 | forge test | 100% pass |
+| # | 检查项 | 工具 | 合格标准 |
+|---|--------|------|---------|
+| 1 | 所有 external/public 有单元测试 | forge test | 100% 通过 |
 | 2 | 核心合约覆盖率 ≥ 75% | forge coverage | ≥ 75% |
-| 3 | 静态分析 0 Critical/High | slither + aderyn | 0 |
+| 3 | 静态分析 0 Critical/High | slither + aderyn + semgrep | 0 |
 | 4 | 依赖漏洞 0 | npm audit | 0 |
-| 5 | .env 不在仓库中 | git ls-files | 0 |
+| 5 | .env 不在仓库中 | git ls-files | 无 |
 | 6 | 无硬编码密钥 | semgrep | 0 |
-| 7 | EIP-712 nonce+chainId 完整 | 人工审查 | ✅ |
-| 8 | 跨链调用幂等 | 人工审查 | ✅ |
+| 7 | EIP-712 nonce+chainId 完整 | security 审查 | ✅ |
+| 8 | 跨链调用幂等 | security 审查 | ✅ |
+| 9 | solhint 无 error | solhint | 0 |
+| 10 | forge test 通过 | forge test | 100% |
 
 ---
 
