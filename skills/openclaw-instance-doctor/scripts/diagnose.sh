@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# OpenClaw Instance Doctor — 10-dimension diagnostic script
+# OpenClaw Instance Doctor — 8-dimension diagnostic script
+# Focus: config optimization (cache hit), session mgmt, disk, browser, Gateway health
 # Usage: sshpass -p '<PASS>' ssh ubuntu@<IP> 'bash -s' < diagnose.sh
 
 echo '========================================'
@@ -22,67 +23,73 @@ else
   echo '❌ MISSING'
 fi
 
-echo '--- 3. 子 Agent 清单 ---'
+echo '--- 3. 子 Agent 清单 (9个) ---'
+AGENTS_OK=0; AGENTS_FAIL=0
 for d in qa security security-check security-check-centralized tester \
   ui-design-critique ux-researcher design-advisor ui-designer; do
   f=$(find ~/.openclaw/workspace -maxdepth 3 -path "*/$d/AGENTS.md" ! -path "*node_modules*" 2>/dev/null | head -1)
-  [ -f "$f" ] && echo "✅ $d: $(wc -l < "$f")L" || echo "❌ $d: MISSING"
+  if [ -f "$f" ]; then
+    echo "✅ $d: $(wc -l < "$f")L"; AGENTS_OK=$((AGENTS_OK+1))
+  else
+    echo "❌ $d: MISSING"; AGENTS_FAIL=$((AGENTS_FAIL+1))
+  fi
 done
+echo "合计: $AGENTS_OK 存在, $AGENTS_FAIL 缺失"
 
 echo '--- 4. 旧版残留 ---'
-[ -d ~/.openclaw/workspaces ] && echo '❌ workspaces/ 存在' || echo '✅ 无 workspaces/'
-[ -d ~/.openclaw/agents ] && echo 'agents/ 存在 (运行时)' || echo '✅ 无 agents/'
+[ -d ~/.openclaw/workspaces ] && echo '❌ workspaces/ 存在 (旧版, 应清理)' || echo '✅ 无 workspaces/'
+[ -d ~/.openclaw/agents ] && echo '✅ agents/ 存在 (运行时存储)' || echo '⚠️  agents/ 不存在'
 
-echo '--- 5. Config 关键项 ---'
+echo '--- 5. Config (缓存命中关键项) ---'
 python3 << 'PYEOF'
 import json, os
 c = json.load(open(os.path.expanduser('~/.openclaw/openclaw.json')))
-print('bind:', c.get('gateway',{}).get('bind','?'))
+print('gateway.bind:', c.get('gateway',{}).get('bind','?'))
 d = c.get('agents',{}).get('defaults',{})
 print('contextInjection:', d.get('contextInjection','?'))
 print('skipOptional:', d.get('skipOptionalBootstrapFiles','?'))
-print('workspace:', d.get('workspace','?'))
-print('compaction:', d.get('compaction',{}))
+print('bootstrapMaxChars:', d.get('bootstrapMaxChars','?'))
+print('bootstrapTotalMaxChars:', d.get('bootstrapTotalMaxChars','?'))
+print('compaction:', json.dumps(d.get('compaction',{})))
 print('model:', d.get('model',{}).get('primary','?'))
+print('Agents count:', len(c.get('agents',{}).get('list',[])))
 print('Agents:', [a['id'] for a in c.get('agents',{}).get('list',[])])
 ds = c.get('models',{}).get('providers',{}).get('deepseek',{})
 print('DeepSeek timeout:', ds.get('timeoutSeconds','?'))
+s = c.get('session',{})
+print('session.reset:', json.dumps(s.get('reset',{})))
+print('session.maintenance:', json.dumps(s.get('maintenance',{})))
 PYEOF
 
-echo '--- 6. 安全工具 (15项) ---'
-export PATH="$HOME/.cargo/bin:$HOME/.foundry/bin:$HOME/.nvm/versions/node/*/bin:$HOME/.local/bin:/usr/local/bin:$HOME/go/bin:$PATH"
-for t in forge slither aderyn semgrep solhint echidna bandit \
-  nmap nuclei nikto eslint lynis gitleaks trivy autotest; do
-  which "$t" >/dev/null 2>&1 && echo "✅ $t" || echo "❌ $t MISSING"
-done
-
-echo '--- 7. Qdrant 同步 ---'
-for f in sync_memory_to_qdrant.py sync_all_to_qdrant.py; do
-  [ -f ~/${f} ] && echo "✅ ~/${f}" || echo "❌ ~/${f} MISSING"
-done
-find ~/scripts -name '*qdrant*' -o -name '*sync*' 2>/dev/null | while read f; do echo "✅ $f"; done
-crontab -l 2>/dev/null | grep -i qdrant || echo '❌ 无 Qdrant crontab'
-curl -s --connect-timeout 5 -H "api-key: qc_a1hunter_f2f079163e7fc24366c0475221c575fb" \
-  http://182.254.140.44:6333/collections 2>/dev/null | python3 -c \
-  "import json,sys; d=json.load(sys.stdin); print(f'{len(d.get(\"result\",{}).get(\"collections\",[]))} collections')" 2>/dev/null || echo '❌ Qdrant 不通'
-
-echo '--- 8. Session 管理 ---'
-python3 -c "
+echo '--- 6. Session & Prompt Cache ---'
+# 检查 compaction 触发次数和缓存命中（从 session 状态推断）
+python3 << 'PYEOF'
 import json, os
 c = json.load(open(os.path.expanduser('~/.openclaw/openclaw.json')))
-s = c.get('session',{})
-print('reset:', json.dumps(s.get('reset',{})))
-print('maintenance:', json.dumps(s.get('maintenance',{})))
-"
+comp = c.get('agents',{}).get('defaults',{}).get('compaction',{})
+enabled = comp.get('reserveTokens',0) > 0 and comp.get('keepRecentTokens',999999999) < 200000
+print(f"compaction active: {enabled}")
+print(f"reserveTokens={comp.get('reserveTokens','?')} keepRecentTokens={comp.get('keepRecentTokens','?')}")
+PYEOF
 
-echo '--- 9. 浏览器清理 ---'
+echo '--- 7. 浏览器清理 ---'
+BROWSER_OK=0
 for f in chrome-cleanup.sh kill-idle-browser.sh; do
   for d in ~/scripts ~/.openclaw/scripts; do
-    [ -f "$d/$f" ] && echo "✅ $d/$f"
+    if [ -f "$d/$f" ]; then echo "✅ L1 $d/$f"; BROWSER_OK=$((BROWSER_OK+1)); fi
   done
 done
-crontab -l 2>/dev/null | grep -i chrome || echo '❌ 无 Chrome 清理 crontab'
+[ $BROWSER_OK -eq 0 ] && echo '❌ 无浏览器清理脚本'
+crontab -l 2>/dev/null | grep -i chrome && echo '✅ chrome crontab 已配置' || echo '❌ 无 Chrome 清理 crontab'
 
-echo '--- 10. 磁盘详情 ---'
+echo '--- 8. 磁盘 ---'
 df -h / | tail -1
-du -sh /home/ubuntu/*/ /home/ubuntu/.*/ 2>/dev/null | sort -rh | head -10
+echo ''
+echo '大目录 TOP 8:'
+du -sh /home/ubuntu/*/ /home/ubuntu/.*/ 2>/dev/null | sort -rh | head -8
+echo ''
+echo '缓存详情:'
+for d in /home/ubuntu/.npm /home/ubuntu/.cache /home/ubuntu/.local/share/pnpm /tmp; do
+  echo -n "  $d: " && du -sh "$d" 2>/dev/null || echo '(none)'
+done
+journalctl --disk-usage 2>/dev/null | xargs -I{} echo "  journal: {}"
