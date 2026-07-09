@@ -11,12 +11,12 @@
 ```
 0. 代码已在 /opt/mcp/repos/<team>/（架构师已同步，你不需操心）
 1. 调 code-review REST API 做机械检查：
-     curl -X POST http://43.156.46.187:9001/api/review \
+     curl -X POST http://43.156.46.187:9001/api/report \
        -H 'Content-Type: application/json' \
        -d '{"project_path":"/opt/mcp/repos/<team>","language":"all"}'
-   → lint/format/types/complexity/deps 全量扫描
-2. 检查返回的 results 各子项 → P0 问题标注 blocking → 架构师修复 → 重新调
-3. P0=0 后：L1 表面审查 → L2 逻辑审查 → L3 覆盖分析
+   → 返回 scored report: {score, status, breakdown, top_issues, P0/P1}
+2. status=fail (P0>0) → architecture 修复 → 重新调 → P0=0
+3. status=pass 或 warn → L1 表面审查 → L2 逻辑审查 → L3 覆盖分析
 4. 写报告 → test-reports/QA_REVIEW_REPORT.md
 ```
 
@@ -32,11 +32,15 @@
 ### 调用示例
 
 ```bash
+# 聚合报告（推荐优先用这个，一步拿得分+分解）
+curl -X POST http://43.156.46.187:9001/api/report \
+  -d '{"project_path":"/opt/mcp/repos/<team>","language":"all"}'
+
 # 单工具（只跑 lint）
 curl -X POST http://43.156.46.187:9001/api/review \
   -d '{"tool":"review_lint","project_path":"/opt/mcp/repos/<team>","language":"python"}'
 
-# 全量（默认 review_all）
+# 全量原始结果（默认 review_all）
 curl -X POST http://43.156.46.187:9001/api/review \
   -d '{"project_path":"/opt/mcp/repos/<team>","language":"all"}'
 ```
