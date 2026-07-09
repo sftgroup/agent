@@ -16,21 +16,46 @@ function getProvider(chain: string): ethers.providers.JsonRpcProvider {
   return _providerCache[chain];
 }
 
-/** Resolve private key: PRIVATE_KEY_<CHAIN> > PRIVATE_KEY */
-function resolvePK(chain?: string): string {
+/** Resolve private key: PRIVATE_KEY_<CHAIN> > PRIVATE_KEY > PRIVATE_KEY_POOL (auto-select by balance) */
+let _poolCache: { addr: string; pk: string; balance: ethers.BigNumber }[] | null = null;
+
+async function resolvePK(chain?: string): Promise<string> {
+  // 1. Per-chain override
   if (chain) {
     const perChain = process.env[`PRIVATE_KEY_${chain.toUpperCase()}`];
     if (perChain) return perChain;
   }
-  const pk = process.env.PRIVATE_KEY || process.env.DEPLOYER_PK;
-  if (!pk) throw new Error("PRIVATE_KEY not set (chain=" + (chain || "default") + ")");
-  return pk;
+  // 2. Single default
+  const single = process.env.PRIVATE_KEY || process.env.DEPLOYER_PK;
+  if (single) return single;
+  // 3. Pool — auto-select richest
+  const pool = process.env.PRIVATE_KEY_POOL;
+  if (!pool) throw new Error("No private key configured (PRIVATE_KEY or PRIVATE_KEY_POOL)");
+  const pks = pool.split(",").map(p => p.trim()).filter(Boolean);
+  if (pks.length === 0) throw new Error("PRIVATE_KEY_POOL is empty");
+
+  if (!_poolCache) {
+    const provider = getProvider(chain || "sepolia");
+    const entries = await Promise.all(
+      pks.map(async (pk) => {
+        const wallet = new ethers.Wallet(pk, provider);
+        const balance = await provider.getBalance(wallet.address);
+        return { addr: wallet.address, pk, balance };
+      })
+    );
+    _poolCache = entries.sort((a, b) => (b.balance.gt(a.balance) ? 1 : -1));
+  }
+
+  const best = _poolCache[0];
+  if (best.balance.isZero()) throw new Error("All keys in pool have zero balance");
+  return best.pk;
 }
 
-function getWallet(chain?: string): ethers.Wallet {
+async function getWallet(chain?: string): Promise<ethers.Wallet> {
   const key = chain || "default";
   if (!_walletCache[key]) {
-    _walletCache[key] = new ethers.Wallet(resolvePK(chain));
+    const pk = await resolvePK(chain);
+    _walletCache[key] = new ethers.Wallet(pk);
   }
   return _walletCache[key].connect(getProvider(chain || "eth"));
 }
@@ -103,7 +128,7 @@ export async function evm_send(args: {
   max_fee_per_gas?: string;
   max_priority_fee_per_gas?: string;
 }) {
-  const wallet = getWallet(args.chain);
+  const wallet = await getWallet(args.chain);
   const gasPreset = getGasPreset(args.chain);
   const cfg = getChain(args.chain);
 
@@ -150,7 +175,7 @@ export async function evm_deploy(args: {
   verify?: boolean;
   tags?: string[];
 }) {
-  const wallet = getWallet(args.chain);
+  const wallet = await getWallet(args.chain);
   const cfg = getChain(args.chain);
   const gasPreset = getGasPreset(args.chain);
 
@@ -279,7 +304,7 @@ export async function evm_token(args: {
   amount?: string;
 }) {
   const tokenAddr = resolveToken(args.chain, args.token);
-  const wallet = getWallet(args.chain);
+  const wallet = await getWallet(args.chain);
   const erc20Abi = [
     "function balanceOf(address) view returns (uint256)",
     "function decimals() view returns (uint8)",
