@@ -353,6 +353,9 @@ def call_tool(tool_name: str, args: dict) -> dict:
                 "deps": review_deps(pp),
             }
         }
+    elif tool_name == "report":
+        review_result = call_tool("review_all", {"project_path": pp, "language": lang})
+        return _build_report(pp, review_result)
     return {"status": "error", "error": f"unknown tool: {tool_name}"}
 
 
