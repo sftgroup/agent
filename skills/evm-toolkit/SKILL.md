@@ -1,12 +1,25 @@
 ---
 name: evm-toolkit
-description: "EVM multichain ops — cast/hardhat for Ethereum, BSC, Polygon, Arbitrum, Base. ERC20, contract deploy/call, event logs, EIP-1559 gas."
-metadata: {"clawdbot":{"emoji":"⛓️","requires":{"commands":["cast","forge","npx"]},"homepage":"https://github.com/sftgroup/agent"}}
+description: "EVM multichain ops — MCP-first (evm-build:3400). Chain IDs, gas tables, EIP-712 templates. cast/forge reference only."
+metadata: {"clawdbot":{"emoji":"⛓️","homepage":"https://github.com/sftgroup/agent"}}
 ---
 
 # EVM Toolkit
 
-Multichain ops distilled from Contra AI 4-chain (BSC/ETH/Base) mainnet deployment experience.
+> ⚠️ **v1.1 — MCP-first.** 链上操作走 `evm-build__*` MCP tools（43.156.46.187:3400）。
+> 本 skill 仅用作链 ID/Gas/EIP-712 速查表。禁止 exec cast/forge。
+
+## Quickstart
+
+→ [QUICKSTART.md](QUICKSTART.md)
+
+## MCP Dependency
+
+| MCP Server | URL | Tools |
+|-----------|-----|-------|
+| evm-build | `http://43.156.46.187:3400` | 9 (status/call/send/deploy/verify/logs/token/gas/registry) |
+
+调用方式：`evm-build__evm_status(chain="bsc")`
 
 ## Chain IDs
 
