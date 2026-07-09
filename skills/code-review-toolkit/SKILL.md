@@ -80,11 +80,14 @@ code-review MCP 独立于代码管理 MCP。接入只需：
 
 没有额外 API key、token、webhook。纯本地文件系统读取 + 子进程调用。
 
+完整接口规范 → `references/integration-spec.md`（包含：上游依赖、目录约定、调用示例、错误处理、接入 checklist、边界划分）。
+
 ## Files
 
 | Path | Purpose |
 |------|---------|
 | `server.py` | MCP HTTP server v3.0 (single-file, no deps) |
+| `references/integration-spec.md` | 接口规范（上游依赖、调用示例、错误处理、接入 checklist） |
 | `references/.eslintrc.json` | JS/TS lint baseline |
 | `references/.solhint.json` | Solidity lint baseline |
 | `references/report-template.md` | Review report template |
