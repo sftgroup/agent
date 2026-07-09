@@ -1,19 +1,39 @@
 # Baseline Reference Card
 
-## Config (cache hit optimization)
+## Config (cache hit optimization) ⭐
 
 | Config | Value | Why |
 |--------|-------|-----|
 | `contextInjection` | `always` | Full bootstrap per turn → stable prefix → high cache hit |
+| `cacheRetention` | `"long"` | DeepSeek via OpenRouter: 1h cache TTL, auto cache_control injection |
+| `heartbeat.every` | `"55m"` | Keep-warm before cache TTL expires → no cold-start re-cache |
+| `contextPruning.mode` | `"cache-ttl"` | Prune old tool results after TTL → smaller cache-write |
+| `contextPruning.ttl` | `"1h"` | Match cache TTL window |
 | `compaction.reserveTokens` | `12000` | Reserve 12K for summary after compaction |
 | `compaction.keepRecentTokens` | `20000` | Keep last 20K of conversation uncompressed |
 | `compaction.maxHistoryShare` | `0.6` | History ≤60% of context window |
 | `compaction.recentTurnsPreserve` | `3` | Always keep last 3 turns complete |
 | `compaction.notifyUser` | `true` | Notify user when compacting |
 | `skipOptionalBootstrapFiles` | `["SOUL.md","HEARTBEAT.md","IDENTITY.md","USER.md"]` | Skip absent files → no 404 cost in bootstrap |
-| `bootstrapMaxChars` | `20000` | For healthy bootstrap size |
-| `bootstrapTotalMaxChars` | `50000` | Upper ceiling for all bootstrap files |
+| `bootstrapMaxChars` | `20000` | Per-file ceiling, avoid oversized AGENTS.md |
+| `bootstrapTotalMaxChars` | `50000` | Upper ceiling for all bootstrap files (enough for 10 agents) |
 | `deepseek.timeoutSeconds` | `300` | Matches model latency profile |
+
+### Cache-hit chain (DeepSeek via OpenRouter)
+
+```
+稳定前缀    contextInjection:always
+              ↓ skipOptional → no 404 in bootstrap
+Cache 写入   OpenRouter auto-injects cache_control markers
+              ↓
+Cache 留存    cacheRetention:long → 1h TTL
+              ↓
+保活          heartbeat:55m → never expires
+              ↓
+瘦身          contextPruning → old tool output trimmed
+              ↓
+下一请求      prefix 不变 → cacheRead 命中 → 省 token + 快响应
+```
 
 ## Gateway
 
