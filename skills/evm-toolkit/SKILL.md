@@ -150,3 +150,34 @@ Stuck tx: replace with same nonce + higher gas.
 9. Deploy records lost → auto-write `DEPLOY_RECORDS.md` in script
 
 See `references/pitfalls.md` for detailed Contra AI war stories.
+
+## Bundled Scripts & Templates
+
+### scripts/
+
+- `scripts/deploy-multichain.js` — Hardhat multi-chain deploy, reads `contracts-config.json`, auto-writes `DEPLOY_RECORDS.md`
+- `scripts/cast-ops.sh` — Wrapped cast operations: `cast-ops.sh balance eth 0x...`, `cast-ops.sh sync 0x...` for cross-chain nonce check
+
+### assets/
+
+- `assets/hardhat.config.js` — Drop-in multi-chain template with eth/bsc/base/polygon/arb/sepolia
+- `assets/.env.template` — RPC + private key + explorer API key template
+
+### Usage
+
+```bash
+# Quick query
+source scripts/cast-ops.sh
+chain-use bsc
+cast-balance 0x...
+cast-erc20-info 0xTOKEN
+
+# Cross-chain nonce sync (pre-deploy check)
+scripts/cast-ops.sh sync 0xDEPLOYER
+
+# Deploy
+cp assets/hardhat.config.js contracts/
+cp assets/.env.template .env
+# edit .env with real keys
+npx hardhat run scripts/deploy-multichain.js --network bsc
+```
