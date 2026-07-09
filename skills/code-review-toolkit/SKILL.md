@@ -1,9 +1,9 @@
 ---
 name: code-review-toolkit
-description: "Code quality MCP v3.1 — centralized lint/format/types/complexity/deps audit. Local filesystem on MCP server, serves all OpenClaw instances. Integrates with git-mcp for repo_sync + SHA traceability."
+description: "Code quality MCP v4.0 — centralized lint/format/types/complexity/deps audit. Local filesystem on MCP server, serves all OpenClaw instances. Integrates with git-mcp for code sync + SHA traceability."
 ---
 
-# Code Review Toolkit v3.1
+# Code Review Toolkit v4.0
 
 Code Review MCP 只做一件事：**代码机械审查**。调用方是 QA 子代理（先跑机械检查 → 再跑 AI review）。代码由 git-mcp (MCP server `git`) 的 `repo_sync` 同步，构建和发布不在本 Skill 范围内。
 
@@ -118,29 +118,24 @@ git-mcp 管理代码、code-review 审查代码。两者的接口：
 | systemd | code-review-mcp.service |
 | Dir | /opt/mcp/code-review/ |
 | Python | 3.12 (stdlib only, zero deps) |
-| Health | `curl http://43.156.46.187:9001/health` → `{"status":"ok","version":"3.1.0","mode":"local"}` |
+| Health | `curl http://43.156.46.187:9001/health` → `{"status":"ok","version":"4.0.0","mode":"local"}` |
 
 ## Register on OpenClaw
 
-```json
-{
-  "mcp": {
-    "servers": {
-      "code-review": {
-        "command": "http",
-        "args": ["http://43.156.46.187:9001/mcp"],
-        "transport": "streamable-http"
-      }
-    }
-  }
-}
+```bash
+openclaw mcp add code-review \
+  --url http://43.156.46.187:9001 \
+  --transport streamable-http \
+  --timeout 60
 ```
+
+⚠️ 用 `http://43.156.46.187:9001`（根路径），不用 `/mcp`。
 
 ## Files
 
 | Path | Purpose |
 |------|---------|
-| `server.py` | MCP HTTP server v3.1 (single-file, no deps) |
+| `server.py` | MCP HTTP server v4.0 (single-file, no deps) |
 | `references/integration-spec.md` | 接口规范（上游依赖、调用示例、错误处理、接入 checklist） |
 | `references/apply-guide.md` | Apply 指南（其他 Agent 如何接入：4 步 + 工作流模板 + 排错） |
 | `references/.eslintrc.json` | JS/TS lint baseline |
