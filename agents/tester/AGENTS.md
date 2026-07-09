@@ -14,21 +14,24 @@
 5. **分步写入** — 每组测完立即追加报告
 6. **禁止虚假汇报** — `passed=false` 就如实报
 
-## 🔴 绝对禁令
+## 🔴 绝对禁令 — 违者不可接受
 
-以下命令禁止出现在任何测试过程中：
+**以下命令绝对禁止出现在任何测试过程中：**
 
-- `curl http://...` → ❌ 用 `api_post` / `api_get` / `api_e2e_test`
-- `exec python3 -c "import requests..."` → ❌ 绕过 MCP
-- `exec node -e "fetch(...)"` → ❌ 绕过 MCP
-- `exec echo "PASS"` → ❌ 假阳性
+- `curl http://...` — ❌ 用 `api_post` / `api_get` / `api_e2e_test`
+- `wget http://...` — ❌ 同上
+- `exec echo "PASS"` — ❌ 假阳性
+- `exec curl ...` — ❌ 同上
+- `exec python3 -c "import requests..."` — ❌ 绕过 MCP
+- `exec node -e "fetch(...)"` — ❌ 绕过 MCP
 - 任何 `exec` 里包含 HTTP 调用的命令
 
-MCP Tool 报错时不是切 exec 的理由。如实报告失败，不要自己 hack。
+**MCP Tool 报错时不是切 exec 的理由。** 报错就如实报告失败，不要自己 hack。
+**测试的所有 HTTP 请求、链上操作、浏览器操作必须通过 MCP Tool 执行。**
 
 ## 🧠 返回值解读
 
-所有 MCP Tool 统一返回三层报告：
+**所有 MCP Tool 统一返回三层报告格式：**
 
 ```json
 {
@@ -39,21 +42,41 @@ MCP Tool 报错时不是切 exec 的理由。如实报告失败，不要自己 h
 }
 ```
 
-按顺序读：verdict → summary → checks → details（只在深究时展开）
+**决策流程（按顺序）：**
+1. 看 `verdict` → PASS 直接下一个，FAIL 看 summary
+2. 看 `summary` → 一行了解全貌
+3. 看 `checks` → 分步结果，哪个 step 挂了
+4. `details` → 只在需要深究问题根因时展开，平时不读
+
+**场景 tool 自带详细 checks**（每步都有 step name + passed + detail），
+**原子 tool 自动包装**（框架层自动加 verdict/summary）。
 
 ## 🔐 认证
 
-```json
-api_get(url=".../api/backtest/runs", use_auth="test")
-api_get(url=".../api/admin/dashboard", use_auth="admin")
+测试需要登录的 API 时，用 `use_auth` 参数（内置账号）：
+
+```
+api_get(url=".../api/backtest/runs", use_auth="test")      # 普通用户
+api_get(url=".../api/admin/dashboard", use_auth="admin")    # 管理员
+api_post(url=".../api/submit", body="...", use_auth="test")
 ```
 
-内置账号: test/test12345 (普通), admin/admin12345 (管理员)
+**内置账号：**
+- 普通用户: test / test12345
+- 管理员: admin / admin12345
+
+**不需要手动登录** — 首次调用自动登录并缓存 token，
+token 过期前自动刷新。401 不会返回给你，MCP 服务器内部处理重试。
+
+如果被测项目没有 auth 端点（404），`use_auth` 会优雅降级，
+以无认证方式发请求（可能返回 401 — 如实报告）。
 
 ## 工具选择
 
 ⚡ 场景 tool 优先 → 一个 tool 完成闭环 → 返回 verdict+summary
 ⚛ 原子 tool 降级 → 场景 tool 不够时下钻
+
+完整工具列表见 skill 速查表或调 `tools/list`。
 
 ## 工作流
 
@@ -61,18 +84,34 @@ api_get(url=".../api/admin/dashboard", use_auth="admin")
 收到任务
   → 读取 TEST_SCENARIOS 文件
   → 分阶段执行:
-    1. CT → evm_contract_test / evm_tx_and_verify → write 报告
-    2. AT → api_e2e_test / api_fuzz_test / api_get(use_auth) → write 追加
-    3. FT → browser_page_check / browser_user_flow → write 追加
-    4. DApp → dapp_swap_flow / dapp_wallet_connect_flow → write 追加
+    1. CT → evm_contract_test / evm_tx_and_verify 等 → write 报告
+    2. AT → api_e2e_test / api_fuzz_test / api_get(use_auth) 等 → write 追加
+    3. FT → browser_page_check / browser_user_flow 等 → write 追加
+    4. BT → security_audit / security_scan 等 → write 追加
+    5. DApp → dapp_swap_flow / dapp_wallet_connect_flow 等 → write 追加
   → 最终报告
 ```
+
+## 返回值
+
+**所有 MCP Tool 统一三层报告：**
+```json
+{
+  "verdict": "PASS" | "FAIL",
+  "summary": "一行摘要",
+  "checks": [{"step": "...", "passed": true, "status": "✅"}],
+  "details": "{... 原始 JSON，只在深究时展开 ...}"
+}
+```
+
+**只看前两层** — verdict + summary 就够了，不要读 details。
+FAIL 时才看 checks 找哪个 step 挂了。
 
 ## 假阳性杜绝
 
 | ❌ | ✅ |
 |---|---|
-| curl \| grep 200 | `api_e2e_test` |
+| curl \| grep 200 | `api_e2e_test`（hurl 自动断言） |
 | evm_send 发了就 PASS | `evm_tx_and_verify`（等 receipt+verdict） |
 | echo "页面开了" | `browser_page_check`（截图+文字验证+verdict） |
 | 自己写 "通过" | 引用 tool 的 `verdict` / `passed` |
