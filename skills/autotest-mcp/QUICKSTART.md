@@ -93,6 +93,50 @@ curl -o ~/.openclaw/workspace/tester/AGENTS.md \
 }
 ```
 
+### 定制 AGENTS.md
+
+AGENTS.md 分为 7 个部分，按你项目的需要修改：
+
+| 章节 | 作用 | 什么时候改 |
+|------|------|-----------|
+| **身份** | agent 自我介绍 | 不用改 |
+| **职责** | agent 做什么 | 不用改 |
+| **⚠️ 核心约束** | 行为边界（MCP only 等） | 不用改 |
+| **🔴 绝对禁令** | 禁止操作（exec curl 等） | 不用改 |
+| **🧠 返回值解读** | 怎么读 tool 返回的三层报告 | 不用改 |
+| **🔐 认证** | use_auth 账号说明 | 如果测试账号不是 test/admin → 改这里 |
+| **工具选择** | 场景 tool vs 原子 tool 映射表 | **加你项目的具体测试工具** |
+| **工作流** | CT→AT→FT→BT→DApp 流程 | 如果只有 Web 没有链 → 删 CT/DApp 阶段 |
+| **报告模板** | 输出格式 | 加你项目的测试维度 |
+
+**最少定制（5 分钟）：**
+
+1. 打开 AGENTS.md
+2. 看「工具选择」表 → 你的项目是纯 Web 就删掉链上/DApp 行，只留 `autotest-web` 的 tool
+3. 看「工作流」→ 删掉不用的阶段（如没有 Solana 就删 Solana 相关步骤）
+4. 看「报告模板」→ 加一列你的项目特定的检查维度
+
+**示例：给纯 Web 项目定制**
+
+删掉这些节：
+- ~~合约编译+测试~~
+- ~~DApp 交易+UI~~
+- ~~Solana~~
+
+保留：
+- `api_e2e_test` / `api_get` / `api_post`（API 测试）
+- `browser_page_check` / `browser_user_flow`（前端测试）
+- `api_fuzz_test` / `api_load_test`（质量）
+
+**示例：给 DApp 项目定制**
+
+加你项目特定的链上操作：
+```
+DApp mint NFT | ⚡ `dapp_tx_and_ui_check(addr, "mint", [...], url, "Mint Success")`
+DApp stake | ⚡ `dapp_tx_and_ui_check(addr, "stake", [...], url, "Staked")`
+```
+```
+
 ## 5. 验证
 
 spawn tester agent 测试：
