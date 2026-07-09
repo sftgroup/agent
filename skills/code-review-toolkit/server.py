@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 """
-Code Review MCP Server v3.0 — local filesystem mode
-Deploy on central MCP server (43.156.46.187).
-All team code lives on this server (git-managed). Review runs locally.
+Code Review MCP Server v3.1 — local filesystem mode
+Deploy on central MCP server. All team code lives on this server (git-managed).
+Review runs locally over /opt/mcp/repos/<team>/.
 
 Tools:
-  - review_lint(project_path, language)     → lint results
-  - review_format(project_path, language)   → format check
+  - review_lint(project_path, language)     → lint results (solhint/eslint/ruff/shellcheck)
+  - review_format(project_path, language)   → format check (forge fmt/prettier/black/shfmt)
   - review_types(project_path, language)    → type check (tsc/mypy)
-  - review_complexity(project_path)         → cyclomatic complexity
+  - review_complexity(project_path)         → cyclomatic complexity (radon/eslint)
   - review_deps(project_path)               → npm audit / pip-audit
-  - review_all(project_path, language)      → full suite
+  - review_all(project_path, language)      → full suite (all 5 layers)
 
-Architecture:
-  teamN ──MCP tool call──→ MCP server ──run linter locally on /opt/mcp/repos/<team>/
+Unified response: { status, project, language, summary, results }
 """
 
 import json
@@ -21,19 +20,30 @@ import subprocess
 import os
 import sys
 import logging
-from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 log = logging.getLogger("code-review-mcp")
 
+# Path whitelist — all project paths must be under this root
+REPOS_ROOT = "/opt/mcp/repos"
+
+
+def validate_path(project_path: str) -> str | None:
+    """Reject paths outside REPOS_ROOT. Returns error message or None."""
+    if not os.path.isdir(project_path):
+        return f"project not found: {project_path}"
+    real = os.path.realpath(project_path)
+    if not real.startswith(os.path.realpath(REPOS_ROOT)):
+        return f"project path must be under {REPOS_ROOT}, got: {project_path}"
+    return None
+
 
 def find_files(project_path: str, extensions: list[str]) -> list[str]:
+    exclude = {'node_modules', 'lib', 'dist', 'build', '.git', 'venv', '.venv',
+               '__pycache__', 'forge-std', 'openzeppelin', '.foundry', 'cache'}
     files = []
-    exclude_dirs = {'node_modules', 'lib', 'dist', 'build', '.git', 'venv', '.venv', '__pycache__', 'forge-std', 'openzeppelin'}
-    if not os.path.isdir(project_path):
-        return []
     for root, dirs, filenames in os.walk(project_path):
-        dirs[:] = [d for d in dirs if d not in exclude_dirs]
+        dirs[:] = [d for d in dirs if d not in exclude]
         for f in filenames:
             if any(f.endswith(ext) for ext in extensions):
                 files.append(os.path.join(root, f))
@@ -41,7 +51,6 @@ def find_files(project_path: str, extensions: list[str]) -> list[str]:
 
 
 def run(cmd: list[str], cwd: str = None, timeout: int = 120) -> tuple[int, str, str]:
-    """Run command locally, return (code, stdout, stderr)."""
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd)
         return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
@@ -50,8 +59,6 @@ def run(cmd: list[str], cwd: str = None, timeout: int = 120) -> tuple[int, str, 
     except subprocess.TimeoutExpired:
         return -1, "", "timeout"
 
-
-# --- Review Functions ---
 
 def review_lint(project_path: str, language: str) -> dict:
     results = []
@@ -62,8 +69,8 @@ def review_lint(project_path: str, language: str) -> dict:
             rc, out, err = run(["solhint"] + sol_files)
             for line in (out + "\n" + err).split("\n"):
                 line = line.strip()
-                if line and (":" in line[:20] or "error" in line.lower() or "warning" in line.lower()):
-                    results.append({"tool": "solhint", "file": line.split(":")[0] if ":" in line else "", "message": line, "severity": "P1"})
+                if line and (":" in line[:20] or "error" in line.lower() or "warning" in line.lower() or "✓" in line):
+                    results.append({"tool": "solhint", "file": "", "message": line, "severity": "P1"})
 
     if language in ("js-ts", "all"):
         ts_files = find_files(project_path, ['.ts', '.tsx', '.js', '.jsx'])
@@ -83,42 +90,92 @@ def review_lint(project_path: str, language: str) -> dict:
                 if line:
                     results.append({"tool": "ruff", "file": "", "message": line, "severity": "P1"})
 
-    return {"project": project_path, "language": language, "issueCount": len(results), "issues": results}
+    if language in ("shell", "all"):
+        sh_files = find_files(project_path, ['.sh'])
+        if sh_files:
+            rc, out, err = run(["shellcheck"] + sh_files)
+            for line in (out + "\n" + err).split("\n"):
+                line = line.strip()
+                if line:
+                    results.append({"tool": "shellcheck", "file": "", "message": line[:200], "severity": "P1"})
+
+    p0 = sum(1 for i in results if i["severity"] == "P0")
+    p1 = sum(1 for i in results if i["severity"] == "P1")
+    return {
+        "status": "ok",
+        "project": project_path,
+        "language": language,
+        "summary": f"{len(results)} issues ({p0} P0, {p1} P1)",
+        "results": results
+    }
 
 
 def review_format(project_path: str, language: str) -> dict:
-    result = {}
+    results = []
+
     if language in ("solidity", "all"):
         rc, out, err = run(["forge", "fmt", "--check"], cwd=project_path, timeout=30)
-        result["solidity"] = {"ok": rc == 0, "output": (out + err)[:500]}
+        results.append({"tool": "forge fmt", "language": "solidity", "ok": rc == 0, "output": (out + err)[:500], "severity": "P1" if rc != 0 else "P0"})
+
     if language in ("js-ts", "all"):
         rc, out, err = run(["npx", "prettier", "--check", f"{project_path}/**/*.{{ts,tsx,js,jsx}}"], timeout=60)
-        result["js-ts"] = {"ok": rc == 0, "output": (out + err)[:500]}
+        results.append({"tool": "prettier", "language": "js-ts", "ok": rc == 0, "output": (out + err)[:500], "severity": "P1" if rc != 0 else "P0"})
+
     if language in ("python", "all"):
         py_files = find_files(project_path, ['.py'])
         if py_files:
             rc, out, err = run(["black", "--check", "--diff"] + py_files, timeout=60)
-            result["python"] = {"ok": rc == 0, "output": (out + err)[:500]}
-    return result
+            results.append({"tool": "black", "language": "python", "ok": rc == 0, "output": (out + err)[:500], "severity": "P1" if rc != 0 else "P0"})
+
+    if language in ("shell", "all"):
+        sh_files = find_files(project_path, ['.sh'])
+        if sh_files:
+            rc, out, err = run(["shfmt", "-d"] + sh_files, timeout=30)
+            results.append({"tool": "shfmt", "language": "shell", "ok": rc == 0, "output": (out + err)[:500], "severity": "P1" if rc != 0 else "P0"})
+
+    failures = [r for r in results if not r["ok"]]
+    return {
+        "status": "ok",
+        "project": project_path,
+        "language": language,
+        "summary": f"{len(failures)}/{len(results)} tools found format issues" if failures else "all format checks passed",
+        "results": results
+    }
 
 
 def review_types(project_path: str, language: str) -> dict:
-    result = {}
-    if language in ("js-ts", "all"):
-        tsconfig = os.path.join(project_path, "tsconfig.json")
-        if os.path.exists(tsconfig):
-            rc, out, err = run(["npx", "tsc", "--noEmit"], cwd=project_path, timeout=60)
-            result["js-ts"] = {"ok": rc == 0, "errors": (out + err)[:1000]}
+    results = []
+
+    tsconfig = os.path.join(project_path, "tsconfig.json")
+    if language in ("js-ts", "all") and os.path.exists(tsconfig):
+        rc, out, err = run(["npx", "tsc", "--noEmit"], cwd=project_path, timeout=60)
+        issues = []
+        for line in (out + "\n" + err).split("\n"):
+            line = line.strip()
+            if line and "error TS" in line:
+                issues.append(line)
+        results.append({"tool": "tsc", "language": "js-ts", "ok": rc == 0, "issueCount": len(issues), "issues": issues[:20], "severity": "P0" if rc != 0 else "P0"})
+
     if language in ("python", "all"):
         py_files = find_files(project_path, ['.py'])
         if py_files:
             rc, out, err = run(["mypy"] + py_files, timeout=60)
-            result["python"] = {"ok": rc == 0, "errors": (out + err)[:1000]}
-    return result
+            issues = [l.strip() for l in (out + "\n" + err).split("\n") if l.strip()]
+            results.append({"tool": "mypy", "language": "python", "ok": rc == 0, "issueCount": len(issues), "issues": issues[:20], "severity": "P0" if rc != 0 else "P0"})
+
+    p0 = sum(1 for r in results if r["severity"] == "P0" and not r["ok"])
+    return {
+        "status": "ok",
+        "project": project_path,
+        "language": language,
+        "summary": f"{p0} tools with type errors" if p0 > 0 else "all type checks passed",
+        "results": results
+    }
 
 
 def review_complexity(project_path: str) -> dict:
-    result = {}
+    results = {}
+
     py_files = find_files(project_path, ['.py'])
     if py_files:
         rc, out, err = run(["radon", "cc"] + py_files + ["-a", "-s"], timeout=60)
@@ -127,36 +184,51 @@ def review_complexity(project_path: str) -> dict:
             parts = line.strip().split()
             if len(parts) >= 3 and parts[-1].startswith(('F', 'C', 'M')):
                 complexity.append({"function": parts[0], "complexity": parts[-2], "rank": parts[-1]})
-        result["python"] = complexity
+        high = [c for c in complexity if c["rank"] in ("D", "E", "F")]
+        results["python"] = {"total": len(complexity), "high_complexity": high}
 
     ts_files = find_files(project_path, ['.ts', '.tsx'])
     if ts_files:
         rc, out, err = run(["eslint"] + ts_files + ["--rule", "complexity: [warn, 10]", "--rule", "max-lines-per-function: [warn, {max: 80}]", "--format", "compact"], timeout=60)
-        result["typescript"] = [l.strip() for l in out.split("\n") if l.strip() and "complexity" in l.lower()]
-    return result
+        issues = [l.strip() for l in out.split("\n") if l.strip() and "complexity" in l.lower()]
+        results["typescript"] = {"issueCount": len(issues), "issues": issues[:20]}
+
+    return {
+        "status": "ok",
+        "project": project_path,
+        "summary": "complexity analysis complete",
+        "results": results
+    }
 
 
 def review_deps(project_path: str) -> dict:
-    result = {}
+    results = {}
+
     pkg_json = os.path.join(project_path, "package.json")
     if os.path.exists(pkg_json):
         rc, out, err = run(["npm", "audit", "--json"], cwd=project_path, timeout=120)
         if out.startswith("{"):
             try:
                 data = json.loads(out)
-                result["npm"] = data.get("metadata", {}).get("vulnerabilities", {})
+                results["npm"] = data.get("metadata", {}).get("vulnerabilities", {})
             except json.JSONDecodeError:
-                result["npm"] = {"raw": out[:500]}
+                results["npm"] = {"raw": out[:500]}
 
     req_files = find_files(project_path, ['requirements.txt'])
     if req_files:
         rc, out, err = run(["pip-audit", "-r", req_files[0], "--format", "json"], timeout=120)
         if out.startswith("[") or out.startswith("{"):
             try:
-                result["python"] = json.loads(out)
+                results["python"] = json.loads(out)
             except json.JSONDecodeError:
-                result["python"] = {"raw": out[:500]}
-    return result
+                results["python"] = {"raw": out[:500]}
+
+    return {
+        "status": "ok",
+        "project": project_path,
+        "summary": "dependency audit complete",
+        "results": results
+    }
 
 
 # --- MCP HTTP Handler ---
@@ -166,29 +238,29 @@ import urllib.parse
 
 TOOLS = {
     "review_lint": {
-        "description": "Lint checks on central repo (solhint/eslint/ruff). Returns issues with severity.",
+        "description": "Lint checks (solhint/eslint/ruff/shellcheck) on code under /opt/mcp/repos/. Returns unified result with severity.",
         "parameters": {
             "type": "object",
             "properties": {
                 "project_path": {"type": "string", "description": "Project path on MCP server, e.g. /opt/mcp/repos/team3"},
-                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "all"]}
+                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "shell", "all"]}
             },
             "required": ["project_path", "language"]
         }
     },
     "review_format": {
-        "description": "Format check on central repo (forge fmt/prettier/black).",
+        "description": "Format check (forge fmt/prettier/black/shfmt) on code under /opt/mcp/repos/.",
         "parameters": {
             "type": "object",
             "properties": {
                 "project_path": {"type": "string"},
-                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "all"]}
+                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "shell", "all"]}
             },
             "required": ["project_path", "language"]
         }
     },
     "review_types": {
-        "description": "Type check on central repo (tsc/mypy).",
+        "description": "Type check (tsc/mypy) on code under /opt/mcp/repos/.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -199,7 +271,7 @@ TOOLS = {
         }
     },
     "review_complexity": {
-        "description": "Code complexity analysis on central repo (radon/eslint).",
+        "description": "Code complexity analysis (radon/eslint) on code under /opt/mcp/repos/.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -209,7 +281,7 @@ TOOLS = {
         }
     },
     "review_deps": {
-        "description": "Dependency vulnerability audit on central repo (npm audit/pip-audit).",
+        "description": "Dependency vulnerability audit (npm audit/pip-audit) on code under /opt/mcp/repos/.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -219,12 +291,12 @@ TOOLS = {
         }
     },
     "review_all": {
-        "description": "Full code review: lint + format + types + complexity + deps.",
+        "description": "Full code review (lint+format+types+complexity+deps) on code under /opt/mcp/repos/.",
         "parameters": {
             "type": "object",
             "properties": {
                 "project_path": {"type": "string"},
-                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "all"]}
+                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "shell", "all"]}
             },
             "required": ["project_path", "language"]
         }
@@ -236,8 +308,10 @@ def call_tool(tool_name: str, args: dict) -> dict:
     pp = args["project_path"]
     lang = args.get("language", "all")
 
-    if not os.path.isdir(pp):
-        return {"error": f"project not found: {pp}"}
+    # Path validation
+    err = validate_path(pp)
+    if err:
+        return {"status": "error", "error": err}
 
     if tool_name == "review_lint":
         return review_lint(pp, lang)
@@ -251,15 +325,19 @@ def call_tool(tool_name: str, args: dict) -> dict:
         return review_deps(pp)
     elif tool_name == "review_all":
         return {
+            "status": "ok",
             "project": pp,
             "language": lang,
-            "lint": review_lint(pp, lang),
-            "format": review_format(pp, lang),
-            "types": review_types(pp, lang),
-            "complexity": review_complexity(pp),
-            "deps": review_deps(pp),
+            "summary": "full review complete",
+            "results": {
+                "lint": review_lint(pp, lang),
+                "format": review_format(pp, lang),
+                "types": review_types(pp, lang),
+                "complexity": review_complexity(pp),
+                "deps": review_deps(pp),
+            }
         }
-    return {"error": f"unknown tool: {tool_name}"}
+    return {"status": "error", "error": f"unknown tool: {tool_name}"}
 
 
 class MCPHandler(http.server.BaseHTTPRequestHandler):
@@ -278,7 +356,7 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/health":
-            self._json(200, {"status": "ok", "version": "3.0.0", "mode": "local"})
+            self._json(200, {"status": "ok", "version": "3.1.0", "mode": "local"})
         elif parsed.path == "/mcp":
             self._json(405, {"error": "use POST for MCP"})
         else:
@@ -302,7 +380,7 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
                 "result": {
                     "protocolVersion": "2025-06-18",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "code-review-mcp", "version": "3.0.0"}
+                    "serverInfo": {"name": "code-review-mcp", "version": "3.1.0"}
                 }
             })
         elif method == "tools/list":
@@ -321,8 +399,10 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
 
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9001
+    if not os.path.isdir(REPOS_ROOT):
+        log.warning(f"Repos root {REPOS_ROOT} does not exist — will be created by code-mgmt MCP")
     server = http.server.HTTPServer(("0.0.0.0", port), MCPHandler)
-    log.info(f"Code Review MCP Server v3.0 (local mode) on 0.0.0.0:{port}")
+    log.info(f"Code Review MCP Server v3.1 (local mode, whitelist: {REPOS_ROOT}) on 0.0.0.0:{port}")
     server.serve_forever()
 
 

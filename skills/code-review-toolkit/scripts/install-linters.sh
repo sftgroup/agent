@@ -1,40 +1,110 @@
 #!/usr/bin/env bash
-# Code Review Toolkit — install all linters (idempotent)
+# Code Review Toolkit — install all linters on MCP server (idempotent)
 # Usage: bash install-linters.sh
+# Designed for MCP server (43.156.46.187). Portable to any server.
 set -e
 
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-export PNPM_HOME="$HOME/.local/share/pnpm"
-export PATH="$PNPM_HOME:$HOME/.nvm/versions/node/v22.23.0/bin:$HOME/.local/bin:/usr/local/bin:$HOME/go/bin:$PATH"
+echo "=== Code Review Toolkit — Linter Install ==="
+echo "Server: $(hostname) | $(date -Iseconds)"
+echo ""
 
-echo "=== Installing Linters ==="
+# --- Node.js (if missing) ---
+if ! command -v node >/dev/null 2>&1; then
+  echo "--- Installing Node.js 22 ---"
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+fi
+echo "node: $(node --version)"
+echo "npm:  $(npm --version)"
 
-# JS/TS
-echo "--- JS/TS ---"
-npm list -g eslint 2>/dev/null | grep -q eslint && echo "✅ eslint already" || { npm install -g eslint && echo "✅ eslint installed"; }
-npm list -g prettier 2>/dev/null | grep -q prettier && echo "✅ prettier already" || { npm install -g prettier && echo "✅ prettier installed"; }
-command -v tsc >/dev/null 2>&1 && echo "✅ tsc available" || { npm install -g typescript && echo "✅ typescript installed"; }
+# --- JS/TS tools ---
+echo ""
+echo "--- JS/TS Linters ---"
+for pkg in eslint prettier typescript; do
+  if npm list -g "$pkg" 2>/dev/null | grep -q "$pkg"; then
+    echo "✅ $pkg already installed"
+  else
+    echo "📦 installing $pkg..."
+    npm install -g "$pkg"
+    echo "✅ $pkg installed"
+  fi
+done
 
-# Solidity
-echo "--- Solidity ---"
-npm list -g solhint 2>/dev/null | grep -q solhint && echo "✅ solhint already" || { npm install -g solhint && echo "✅ solhint installed"; }
+# --- Solidity ---
+echo ""
+echo "--- Solidity Linters ---"
+if npm list -g solhint 2>/dev/null | grep -q solhint; then
+  echo "✅ solhint already installed"
+else
+  echo "📦 installing solhint..."
+  npm install -g solhint
+  echo "✅ solhint installed"
+fi
 
-# Python
-echo "--- Python ---"
-pip3 list 2>/dev/null | grep -qi "^ruff " && echo "✅ ruff already" || { pip3 install --break-system-packages ruff 2>/dev/null && echo "✅ ruff installed"; }
-pip3 list 2>/dev/null | grep -qi "^black " && echo "✅ black already" || { pip3 install --break-system-packages black 2>/dev/null && echo "✅ black installed"; }
-pip3 list 2>/dev/null | grep -qi "^mypy " && echo "✅ mypy already" || { pip3 install --break-system-packages mypy 2>/dev/null && echo "✅ mypy installed"; }
-pip3 list 2>/dev/null | grep -qi "^radon " && echo "✅ radon already" || { pip3 install --break-system-packages radon 2>/dev/null && echo "✅ radon installed"; }
-pip3 list 2>/dev/null | grep -qi "^pip-audit " && echo "✅ pip-audit already" || { pip3 install --break-system-packages pip-audit 2>/dev/null && echo "✅ pip-audit installed"; }
+# --- Python tools ---
+echo ""
+echo "--- Python Linters ---"
+for pkg in ruff black mypy radon pip-audit; do
+  if pip3 list 2>/dev/null | grep -qi "^$pkg "; then
+    echo "✅ $pkg already installed"
+  else
+    echo "📦 installing $pkg..."
+    pip3 install --break-system-packages "$pkg" 2>/dev/null
+    echo "✅ $pkg installed"
+  fi
+done
 
-# Shell
-echo "--- Shell ---"
-command -v shellcheck >/dev/null 2>&1 && echo "✅ shellcheck available" || { sudo apt-get install -y shellcheck 2>/dev/null && echo "✅ shellcheck installed" || echo "⚠️  shellcheck not installable"; }
-command -v shfmt >/dev/null 2>&1 && echo "✅ shfmt available" || { sudo apt-get install -y shfmt 2>/dev/null || echo "⚠️  shfmt not installable"; }
+# --- Shell ---
+echo ""
+echo "--- Shell Linters ---"
+if command -v shellcheck >/dev/null 2>&1; then
+  echo "✅ shellcheck already installed"
+else
+  echo "📦 installing shellcheck (apt)..."
+  sudo apt-get install -y shellcheck 2>/dev/null && echo "✅ shellcheck installed" || echo "⚠️  shellcheck not installable"
+fi
+
+if command -v shfmt >/dev/null 2>&1; then
+  echo "✅ shfmt already installed"
+else
+  echo "📦 installing shfmt (via snap)..."
+  sudo snap install shfmt 2>/dev/null && echo "✅ shfmt installed" || echo "⚠️  shfmt not installed (optional)"
+fi
+
+# --- Foundry (forge fmt) ---
+echo ""
+echo "--- Foundry ---"
+if command -v forge >/dev/null 2>&1; then
+  echo "✅ forge: $(forge --version)"
+else
+  echo "📦 installing foundry..."
+  curl -L https://foundry.paradigm.xyz | bash
+  export PATH="$HOME/.foundry/bin:$PATH"
+  foundryup 2>/dev/null && echo "✅ foundry installed" || echo "⚠️  foundry install failed (non-critical)"
+fi
+
+# --- sshpass (SSH operations) ---
+echo ""
+echo "--- SSH ---"
+if command -v sshpass >/dev/null 2>&1; then
+  echo "✅ sshpass already installed"
+else
+  echo "📦 installing sshpass..."
+  sudo apt-get install -y sshpass
+  echo "✅ sshpass installed"
+fi
+
+# --- Status ---
+echo ""
+echo "=== Final Status ==="
+for t in node eslint prettier tsc solhint ruff black mypy radon pip-audit shellcheck shfmt forge sshpass; do
+  if command -v "$t" >/dev/null 2>&1; then
+    ver=$($t --version 2>&1 | head -1 | tr '\n' ' ')
+    echo "✅ $t: $ver"
+  else
+    echo "❌ $t: MISSING"
+  fi
+done
 
 echo ""
-echo "=== Linter Status ==="
-for t in eslint prettier solhint ruff black mypy radon shellcheck; do
-  command -v "$t" >/dev/null 2>&1 && echo "✅ $t: $($t --version 2>&1 | head -1)" || echo "❌ $t MISSING"
-done
+echo "=== Install Complete ==="
