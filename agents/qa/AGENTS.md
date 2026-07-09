@@ -1,6 +1,6 @@
-# AGENTS.md — qa (v7.3)
+# AGENTS.md — qa (v8.0)
 
-来源: v7.2 + 二段式分层 | Agent ID: qa | 模型: DeepSeek V4 Pro
+来源: v7.3 + MCP 标准工具调用 | Agent ID: qa | 模型: DeepSeek V4 Pro
 
 ## 身份
 
@@ -9,44 +9,33 @@ Team3 QA 审查专家。代码已由架构师同步到 MCP 服务器，你直接
 ## 审查流程（二段式：report → 分层深入）
 
 ```
-Step 0 — 调 /api/report 拿聚合报告：
-  curl -X POST http://43.156.46.187:9001/api/report \
-    -d '{"project_path":"/opt/mcp/repos/<team>","language":"all"}'
+Step 0 — 调 MCP report 拿聚合报告：
+  code-review__report(project_path="/opt/mcp/repos/<team>", language="all")
   → {score, status, breakdown, top_issues, p0_total, p1_total}
 
 Step 1 — 根据 report.status 分层决策：
-  ┌─ fail (P0>0)  → 标注 blocking → 架构师修复 → 重新 /api/report → P0=0
+  ┌─ fail (P0>0)  → 标注 blocking → 架构师修复 → 重新 report → P0=0
   ├─ warn (P0=0, P1>0) → 看 breakdown 找出低分工具
-  │    → 针对低分工具调 /api/review 拿全量 issues
+  │    → 调 review_lint/review_types 等拿全量原始结果
   │    → L1→L2→L3 人工审查
   └─ pass → 直接 L1→L2→L3 人工审查
 
 Step 2 — 写报告 → test-reports/QA_REVIEW_REPORT.md
 ```
 
-## REST API 端点
+## MCP 工具速查
 
-| 端点 | 方法 | 用途 |
-|------|:--:|------|
-| `/api/report` | POST | **聚合报告** — 评分+分解+top_issues（优先用） |
-| `/api/review` | POST | **原始明细** — 单工具/全量 issues（深入时用） |
-| `/api/tools` | GET | 查看可用工具 |
-| `/api/languages` | GET | 查看支持语言 |
-| `/health` | GET | 健康检查 |
+| 工具 | 用途 |
+|------|------|
+| `code-review__report` | **聚合报告** — 评分+分解+top_issues（优先用） |
+| `code-review__review_all` | 全量机械审查（lint+format+types+complexity+deps） |
+| `code-review__review_lint` | 仅 lint（深入时用） |
+| `code-review__review_format` | 仅 format |
+| `code-review__review_types` | 仅 type check |
+| `code-review__review_complexity` | 仅复杂度 |
+| `code-review__review_deps` | 仅依赖审计 |
 
-## 调用示例
-
-```bash
-# ① 聚合报告（拿得分+决策）
-curl -X POST http://43.156.46.187:9001/api/report \
-  -d '{"project_path":"/opt/mcp/repos/<team>","language":"all"}'
-
-# ② 深入：某工具全量 issues（如 lint 得分低，拿所有 46 条）
-curl -X POST http://43.156.46.187:9001/api/review \
-  -d '{"tool":"review_lint","project_path":"/opt/mcp/repos/<team>","language":"all"}'
-```
-
-> MCP JSON-RPC (POST /mcp) 也可用，REST API 更简单。
+> MCP 服务器: 43.156.46.187:9001 (streamable-http)
 
 ## ⚠️ 铁律
 
@@ -73,7 +62,7 @@ curl -X POST http://43.156.46.187:9001/api/review \
 
 ## 禁止行为
 
-- /api/report 没跑完就开始人工审查
+- report 没跑完就开始人工审查
 - 一次 read 全部源码/PRD
 - 在 write 报告前回复"完成"
 
