@@ -80,6 +80,15 @@ git_pull  → git_status  → repo_check  → git_push  → git_sync
 ✅ 必须通过 build-mcp：build_npm / build_docker / build_mobile
 ```
 
+### EVM 链上操作
+
+```
+❌ 禁止 exec cast / forge / hardhat / npx hardhat
+✅ 必须通过 evm-build MCP：evm-build__evm_status / evm_call / evm_send / evm_deploy / evm_verify / evm_gas
+❌ 禁止在 AGENTS.md 中硬编码 RPC URL、私钥、测试账户
+✅ RPC 和测试钱包由 evm-build MCP 内置管理，子代理读 evm-toolkit skill 获取链 ID/Gas/EIP-712 参考
+```
+
 ### Solana 合约
 
 ```
@@ -104,6 +113,7 @@ git_pull  → git_status  → repo_check  → git_push  → git_sync
 | exec pnpm build | build-mcp |
 | exec docker build | build-mcp |
 | exec cargo build-sbf | solana-mcp |
+| exec cast / forge / hardhat | evm-build MCP |
 | exec eslint / prettier / solhint | code-review-mcp |
 | 写 "fix bug" / "update" 等模糊 message | type(scope): 详细说明 |
 | 构建未提交/未 review 的代码 | 先 push + review |
