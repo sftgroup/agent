@@ -1,0 +1,17 @@
+[Unit]
+Description=Solana MCP Server — Build & Deploy Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/solana-mcp
+Environment=PATH=/home/ubuntu/.local/share/pnpm:/home/ubuntu/.local/share/solana/install/active_release/bin:/home/ubuntu/.nvm/versions/node/v22.23.0/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/ubuntu/.local/share/pnpm/pnpm run dev
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
