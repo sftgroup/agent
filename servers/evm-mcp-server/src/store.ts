@@ -4,10 +4,12 @@ import fs from "fs";
 
 const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), "state.db");
 
-let db: Database.Database;
+let db: Database.Database | null = null;
 
 export function getDb(): Database.Database {
   if (!db) {
+    const dir = path.dirname(DB_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     db = new Database(DB_PATH);
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
@@ -17,7 +19,8 @@ export function getDb(): Database.Database {
 }
 
 function initSchema() {
-  db.exec(`
+  const d = db!;
+  d.exec(`
     CREATE TABLE IF NOT EXISTS nonces (
       chain TEXT NOT NULL,
       deployer TEXT NOT NULL,
@@ -66,25 +69,25 @@ function initSchema() {
 // --- Nonce management ---
 
 export function getNonce(chain: string, deployer: string): number {
-  const row = db
+  const row = getDb()
     .prepare("SELECT next_nonce FROM nonces WHERE chain = ? AND deployer = ?")
     .get(chain, deployer) as { next_nonce: number } | undefined;
   return row?.next_nonce ?? -1;
 }
 
 export function setNonce(chain: string, deployer: string, nonce: number) {
-  db.prepare(
-    "INSERT OR REPLACE INTO nonces (chain, deployer, next_nonce, updated_at) VALUES (?, ?, ?, ?)"
-  ).run(chain, deployer, nonce, new Date().toISOString());
+  getDb()
+    .prepare("INSERT OR REPLACE INTO nonces (chain, deployer, next_nonce, updated_at) VALUES (?, ?, ?, ?)")
+    .run(chain, deployer, nonce, new Date().toISOString());
 }
 
 export function incrementNonce(chain: string, deployer: string): number {
-  const row = db
+  const row = getDb()
     .prepare("SELECT next_nonce FROM nonces WHERE chain = ? AND deployer = ?")
     .get(chain, deployer) as { next_nonce: number } | undefined;
   const next = (row?.next_nonce ?? 0) + 1;
   setNonce(chain, deployer, next);
-  return next - 1; // return the nonce used
+  return next - 1;
 }
 
 // --- Deployment registry ---
@@ -106,7 +109,7 @@ export interface Deployment {
 }
 
 export function saveDeployment(d: Deployment) {
-  db.prepare(`
+  getDb().prepare(`
     INSERT INTO deployments (chain, name, address, tx_hash, deployer, constructor_args, abi_hash, bytecode_hash, compiler_version, deployed_at, verified, tags)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
@@ -131,7 +134,8 @@ export function getDeployments(filter: {
   if (filter.tag) { sql += " AND tags LIKE ?"; params.push(`%${filter.tag}%`); }
   sql += " ORDER BY deployed_at DESC LIMIT 100";
 
-  const rows = db.prepare(sql).all(...params) as any[];
+  const d = getDb();
+  const rows = d.prepare(sql).all(...params) as any[];
   return rows.map(r => ({ ...r, tags: JSON.parse(r.tags || "[]") }));
 }
 
@@ -152,26 +156,26 @@ export interface TxRecord {
 }
 
 export function saveTx(tx: TxRecord) {
-  db.prepare(`
+  getDb().prepare(`
     INSERT INTO tx_queue (chain, tx_hash, nonce, deployer, contract, method, status, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(tx.chain, tx.tx_hash, tx.nonce, tx.deployer, tx.contract ?? null, tx.method ?? null, tx.status, tx.created_at);
 }
 
 export function confirmTx(tx_hash: string) {
-  db.prepare(
+  getDb().prepare(
     "UPDATE tx_queue SET status = 'confirmed', confirmed_at = ? WHERE tx_hash = ?"
   ).run(new Date().toISOString(), tx_hash);
 }
 
 export function replaceTx(oldTxHash: string, newTxHash: string) {
-  db.prepare(
+  getDb().prepare(
     "UPDATE tx_queue SET status = 'failed', replaced_by = ? WHERE tx_hash = ?"
   ).run(newTxHash, oldTxHash);
 }
 
 export function getPendingTx(chain: string, deployer: string): TxRecord[] {
-  return db.prepare(
+  return getDb().prepare(
     "SELECT * FROM tx_queue WHERE chain = ? AND deployer = ? AND status = 'pending' ORDER BY nonce ASC"
   ).all(chain, deployer) as TxRecord[];
 }
