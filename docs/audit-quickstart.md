@@ -81,11 +81,17 @@ curl -s https://raw.githubusercontent.com/sftgroup/agent/master/agents/templates
 
 ```bash
 # MCP 连通性
-curl http://43.156.46.187:9001/health        # → code-review v3.2.0
-curl http://43.156.46.187:3000/health        # → security-tools 46 tools
-curl http://43.156.46.187:9001/api/tools     # → REST API 工具列表
+curl http://43.156.46.187:9001/health          # → code-review v3.3.0
+curl http://43.156.46.187:3000/health          # → security-tools 46 tools
+curl http://43.156.46.187:9001/api/tools       # → REST API 工具列表
 
-# 跑一次审查（不需要 MCP 协议，直接 curl）
+# 聚合报告（推荐：一步拿得分+分解+top_issues）
+curl -X POST http://43.156.46.187:9001/api/report \
+  -H 'Content-Type: application/json' \
+  -d '{"project_path":"/opt/mcp/repos/<team>","language":"all"}'
+# → {score, status (pass|warn|fail), breakdown, top_issues}
+
+# 原始明细（需要深入某个工具时用）
 curl -X POST http://43.156.46.187:9001/api/review \
   -H 'Content-Type: application/json' \
   -d '{"project_path":"/opt/mcp/repos/<team>","language":"all"}'
@@ -109,9 +115,10 @@ task="项目根目录: {项目根目录}
 审查层级: L1+L2+L3
 
 Step 0 — 调 code-review REST API：
-  curl -X POST http://43.156.46.187:9001/api/review \
+  curl -X POST http://43.156.46.187:9001/api/report \
     -d '{"project_path":"/opt/mcp/repos/<team>","language":"all"}'
-  P0 问题 → 架构师修复 → 重新调 → P0=0
+  返回 scored report: score/100, status (pass|warn|fail), breakdown per-tool
+  status=fail (P0>0) → 架构师修复 → 重新调 → P0=0
 
 Step 1-3 — L1→L2→L3 人工审查
 产出: {项目根目录}/test-reports/QA_REVIEW_REPORT.md"
@@ -153,7 +160,7 @@ task="项目根目录: {项目根目录}
 
 | 服务 | 端口 | 协议 | 工具数 | 说明 |
 |------|:---:|------|:---:|------|
-| code-review | 9001 | HTTP + REST API | 6+3 | lint/format/types/complexity/deps |
+| code-review | 9001 | HTTP + REST API | 6+''report' | lint/format/types/complexity/deps + 聚合报告 |
 | security-tools | 3000 | SSE | 46 | contract/centralized/production audit |
 | git-mcp | 3082 | HTTP | 19 | repo sync/push/pull/audit |
 | build-mcp | 3081 | HTTP | 6 | npm/docker/mobile build |
@@ -202,7 +209,10 @@ A: 项目必须在 `/opt/mcp/repos/<team>/` 下。先 `git-mcp.repo_sync` 同步
 A: `"type": "sse"`（security-tools MCP 目前只支持 SSE，不支持 streamable-http）。
 
 **Q: 不用 MCP 能直接用 curl 调吗？**
-A: code-review 支持 REST API：`curl http://43.156.46.187:9001/api/review -d '{...}'`。
+A: code-review 支持 REST API。推荐 `/api/report`（聚合报告）和 `/api/review`（原始明细）。
+```bash
+curl http://43.156.46.187:9001/api/report -d '{"project_path":"/opt/mcp/repos/<team>"}'
+```
 
 **Q: 能装在自己服务器上吗？**
 A: 可以。把 `sftgroup/agent/skills/` 下对应的 Skill 复制过去，运行 `install-linters.sh`，改 systemd 监听端口即可。
