@@ -286,3 +286,17 @@ const state = await program.account.programState.fetch(statePda);
 - Rust: nightly-2025-07-01 + stable (`~/.rustup/toolchains/`)
 - Node: v22.23.0 (nvm)
 - Reference project: `/home/ubuntu/contra-ai-solana/` (native Solana, non-Anchor, 18 instr, Borsh)
+
+---
+
+## Scripts & Templates
+
+Executable scripts in `scripts/`:
+
+- `scripts/solana-build-deploy.sh` — one-shot build + upgrade deploy with safety checks
+- `scripts/solana-verify-state.sh` — read on-chain contract state
+
+Code templates in `templates/`:
+
+- `templates/anchor-lib.rs` — full Anchor contract skeleton (state, mint, timelock, pause)
+- `templates/client.ts` — TypeScript client (init, mint, read state, batch mint)
