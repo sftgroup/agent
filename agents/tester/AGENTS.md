@@ -29,10 +29,55 @@
 **MCP Tool 报错时不是切 exec 的理由。** 报错就如实报告失败，不要自己 hack。
 **测试的所有 HTTP 请求、链上操作、浏览器操作必须通过 MCP Tool 执行。**
 
+## 🧠 返回值解读
+
+所有 ⚡ 场景 tool 返回统一 verdict 格式：
+
+```json
+{
+  "verdict": "PASS" | "FAIL",
+  "verdict_confidence": "high",
+  "summary": "🟢 PASS (3/3) | ✅ forge build | ✅ forge test(33P/0F) | ✅ slither(0 issues)",
+  "passed": true,
+  "passed_count": 3,
+  "failed_count": 0,
+  "checks": [
+    {"step": "forge build", "passed": true, "status": "✅", "detail": "ok"}
+  ],
+  "suggestion": "继续下一项测试"
+}
+```
+
+**快速决策流程：**
+1. 先看 `verdict` — PASS 直接下一个，FAIL 看 suggestion
+2. 看 `summary` — 一行了解全貌
+3. 需要细节再看 `checks` 和 `details`
+4. **不要逐行解析 details 里的原始 JSON**，summary 足够
+
+## 🔐 认证
+
+测试需要登录的 API 时，用 `use_auth` 参数（内置账号）：
+
+```
+api_get(url=".../api/backtest/runs", use_auth="test")      # 普通用户
+api_get(url=".../api/admin/dashboard", use_auth="admin")    # 管理员
+api_post(url=".../api/submit", body="...", use_auth="test")
+```
+
+**内置账号：**
+- 普通用户: test / test12345
+- 管理员: admin / admin12345
+
+**不需要手动登录** — 首次调用自动登录并缓存 token，
+token 过期前自动刷新。401 不会返回给你，MCP 服务器内部处理重试。
+
+如果被测项目没有 auth 端点（404），`use_auth` 会优雅降级，
+以无认证方式发请求（可能返回 401 — 如实报告）。
+
 ## 工具选择
 
 ```
-⚡ 场景 tool（首选）→ 一个 tool 完成闭环
+⚡ 场景 tool（首选）→ 一个 tool 完成闭环 → 返回 verdict+summary
 ⚛ 原子 tool（降级）→ 场景 tool 不够时下钻
 ```
 
@@ -57,6 +102,7 @@
 | SQL 检查 | ⚡ `sql_quality_check` | web |
 | DApp 交易+UI | ⚡ `dapp_tx_and_ui_check` | dapp |
 | DApp 部署+UI | ⚡ `dapp_deploy_and_ui_check` | dapp |
+| DApp 钱包连接 | ⚡ `dapp_wallet_connect_flow` | dapp |
 | Swap 全流程 | ⚡ `dapp_swap_flow` | dapp |
 | 事件→前端 | ⚡ `dapp_event_to_ui` | dapp |
 | Solana DApp | ⚡ `dapp_sol_transfer_and_ui` | dapp |
@@ -64,7 +110,7 @@
 ### 原子 tool（降级用）
 evm_call, evm_balance, evm_code, evm_receipt, evm_logs, evm_trace, evm_send
 sol_balance, sol_account, sol_transfer, sol_program_deploy
-browser_navigate, api_get, api_post, data_fake
+browser_navigate, api_get, api_post, data_fake, auth_status, auth_login
 
 ## 工作流
 
@@ -73,33 +119,33 @@ browser_navigate, api_get, api_post, data_fake
   → 读取 TEST_SCENARIOS 文件
   → 分阶段执行:
     1. CT → evm_contract_test / evm_tx_and_verify 等 → write 报告
-    2. AT → api_e2e_test / api_fuzz_test 等 → write 追加
+    2. AT → api_e2e_test / api_fuzz_test / api_get(use_auth) 等 → write 追加
     3. FT → browser_page_check / browser_user_flow 等 → write 追加
     4. BT → security_audit / security_scan 等 → write 追加
-    5. DApp → dapp_swap_flow / dapp_tx_and_ui_check 等 → write 追加
+    5. DApp → dapp_swap_flow / dapp_wallet_connect_flow 等 → write 追加
   → 最终报告
 ```
 
 ## 返回值
 
+### 场景 tool (verdict 格式)
 ```json
-{
-  "ok": true,      // MCP 调用是否成功
-  "passed": true,  // 测试结论（这是真值）
-  "results": {...}
-}
+{ "verdict": "PASS", "summary": "...", "passed": true, "suggestion": "..." }
 ```
 
-**只看 `passed` 字段，不看 `ok`。**
+### 原子 tool (原始格式)
+```json
+{ "ok": true, "stdout": "...", "stderr": "...", "exit_code": 0 }
+```
 
 ## 假阳性杜绝
 
 | ❌ | ✅ |
 |---|---|
 | curl \| grep 200 | `api_e2e_test`（hurl 自动断言） |
-| evm_send 发了就 PASS | `evm_tx_and_verify`（等 receipt） |
-| echo "页面开了" | `browser_page_check`（截图+文字验证） |
-| 自己写 "通过" | 引用 tool 的 `passed` |
+| evm_send 发了就 PASS | `evm_tx_and_verify`（等 receipt+verdict） |
+| echo "页面开了" | `browser_page_check`（截图+文字验证+verdict） |
+| 自己写 "通过" | 引用 tool 的 `verdict` / `passed` |
 
 ## 项目类型
 
@@ -121,19 +167,20 @@ browser_navigate, api_get, api_post, data_fake
 - 通过率: {X}/{Y}
 
 ### CT
-| # | 用例 | Tool | passed | txHash | 备注 |
+| # | 用例 | Verdict | 摘要 |
 
 ### AT
-| # | 端点 | Tool | passed | 状态码 | 备注 |
+| # | 端点 | Verdict | 状态码 | 摘要 |
 
 ### FT
-| # | 路由 | Tool | passed | 截图 | 备注 |
+| # | 路由 | Verdict | 截图 | 摘要 |
 
 ### 失败项
-- 每项附步骤/返回值/复现建议
+- 每项附 verdict/suggestion/复现建议
 ```
 
 ## 异常处理
 
 - tool 返回 "not found" → 环境未安装，报告并跳过
 - tool 返回 "rate_limit_exceeded" → 等待 30s 重试一次
+- `verdict: "FAIL"` 但 `verdict_confidence: "low"` → 可能是环境问题，标注但继续
