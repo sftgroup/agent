@@ -1,14 +1,15 @@
-# Autotest MCP Skill — Quick Start
+# Autotest MCP — Quick Start
 
-让 OpenClaw agent 通过 MCP 协议远程执行自动化测试（链上交易、浏览器截图、API 断言）。
+让 OpenClaw agent 通过 MCP 协议远程执行自动化测试（链上交易 + 浏览器 + API），**5 步搞定**。
 
 ## 前置条件
 
 - OpenClaw Gateway 已运行
-- 能访问 MCP 服务器 `43.156.46.187`（端口 8081/8082/8083）
-- 有 `sftgroup/agent` 仓库访问权限
+- 能访问 MCP 服务器 43.156.46.187（端口 8081/8082/8083）
 
-## 1. 安装 Skill
+---
+
+## Step 1: 装 Skill
 
 ```bash
 git clone https://github.com/sftgroup/agent.git /tmp/agent-skills
@@ -16,62 +17,60 @@ openclaw skills install /tmp/agent-skills/skills/autotest-mcp
 ```
 
 验证：
+
 ```bash
 openclaw skills list | grep autotest-mcp
 # 应显示 ✓ ready
 ```
 
-## 2. 配置 MCP 服务器
+---
 
-编辑 `~/.openclaw/openclaw.json`，在 `mcp.servers` 下添加：
+## Step 2: 注册 MCP
 
-```json
-{
-  "mcp": {
-    "servers": {
-      "autotest-web3": {
-        "transport": "sse",
-        "url": "http://43.156.46.187:8081/sse"
-      },
-      "autotest-web": {
-        "transport": "sse",
-        "url": "http://43.156.46.187:8082/sse"
-      },
-      "autotest-dapp": {
-        "transport": "sse",
-        "url": "http://43.156.46.187:8083/sse"
-      }
-    }
-  }
-}
-```
-
-> ⚠️ 必须用 `transport: "sse"` + `/sse` 端点，不能用 REST API `/mcp`。
-
-或用 CLI：
 ```bash
-openclaw mcp add autotest-web3 http://43.156.46.187:8081/sse --transport sse
-openclaw mcp add autotest-web  http://43.156.46.187:8082/sse --transport sse
-openclaw mcp add autotest-dapp http://43.156.46.187:8083/sse --transport sse
+openclaw mcp add autotest-web3 \
+  --url http://43.156.46.187:8081/sse \
+  --transport sse \
+  --timeout 300
+
+openclaw mcp add autotest-web \
+  --url http://43.156.46.187:8082/sse \
+  --transport sse \
+  --timeout 300
+
+openclaw mcp add autotest-dapp \
+  --url http://43.156.46.187:8083/sse \
+  --transport sse \
+  --timeout 300
 ```
 
-## 3. 重启 Gateway
+⚠️ 用 `sse` transport + `/sse` 端点，**不要用 streamable-http**。
+
+---
+
+## Step 3: 重启 Gateway
 
 ```bash
 openclaw gateway restart
 ```
 
-> ⚠️ 必须重启，否则 tool 列表为空。配完 MCP 不重启是常见坑。
+⚠️ 必须重启，否则 tool 列表为空。配完 MCP 不重启是常见坑。
 
 验证：
+
 ```bash
-openclaw mcp probe
-# 应看到 autotest-web3 (21 tools) / autotest-web (18 tools) / autotest-dapp (8 tools)
+openclaw mcp probe | grep autotest
+# 应看到:
+#   autotest-web3: 21 tools
+#   autotest-web: 18 tools
+#   autotest-dapp: 8 tools
 ```
 
-## 4. 配置 tester agent
+---
 
-把 `sftgroup/agent/agents/tester/AGENTS.md` 复制到你的 tester workspace：
+## Step 4: 配置 tester agent
+
+### 4.1 复制 AGENTS.md
 
 ```bash
 mkdir -p ~/.openclaw/workspace/tester
@@ -79,13 +78,15 @@ curl -o ~/.openclaw/workspace/tester/AGENTS.md \
   https://raw.githubusercontent.com/sftgroup/agent/master/agents/tester/AGENTS.md
 ```
 
-在 `openclaw.json` 注册 tester agent：
+### 4.2 注册 agent
+
+在 `openclaw.json` 的 `agents` 段加：
+
 ```json
 {
   "agents": {
     "tester": {
       "agentId": "tester",
-      "model": "deepseek/deepseek-v4-pro",
       "workspace": "~/.openclaw/workspace/tester",
       "toolsAllow": ["autotest-*"]
     }
@@ -93,147 +94,132 @@ curl -o ~/.openclaw/workspace/tester/AGENTS.md \
 }
 ```
 
-### 定制 AGENTS.md
+### 4.3 定制 AGENTS.md（按项目类型）
 
-AGENTS.md 分为 7 个部分，按你项目的需要修改：
+| 项目类型 | 保留 | 删除 |
+|----------|------|------|
+| 纯 Web | AT + FT（api/browser） | CT / DApp |
+| DApp | CT + AT + FT + DApp | 无 |
+| 纯合约 | CT + BT（evm/security） | AT / FT / DApp |
 
-| 章节 | 作用 | 什么时候改 |
-|------|------|-----------|
-| **身份** | agent 自我介绍 | 不用改 |
-| **职责** | agent 做什么 | 不用改 |
-| **⚠️ 核心约束** | 行为边界（MCP only 等） | 不用改 |
-| **🔴 绝对禁令** | 禁止操作（exec curl 等） | 不用改 |
-| **🧠 返回值解读** | 怎么读 tool 返回的三层报告 | 不用改 |
-| **🔐 认证** | use_auth 账号说明 | 如果测试账号不是 test/admin → 改这里 |
-| **工具选择** | 场景 tool vs 原子 tool 映射表 | **加你项目的具体测试工具** |
-| **工作流** | CT→AT→FT→BT→DApp 流程 | 如果只有 Web 没有链 → 删 CT/DApp 阶段 |
-| **报告模板** | 输出格式 | 加你项目的测试维度 |
+打开 AGENTS.md → 删掉不需要的测试阶段 → 5 分钟搞定。
 
-**最少定制（5 分钟）：**
+### 4.4 QA agent 加测试引用
 
-1. 打开 AGENTS.md
-2. 看「工具选择」表 → 你的项目是纯 Web 就删掉链上/DApp 行，只留 `autotest-web` 的 tool
-3. 看「工作流」→ 删掉不用的阶段（如没有 Solana 就删 Solana 相关步骤）
-4. 看「报告模板」→ 加一列你的项目特定的检查维度
+QA 的 AGENTS.md 加：
 
-**示例：给纯 Web 项目定制**
+```markdown
+## 审查前先跑 autotest
 
-删掉这些节：
-- ~~合约编译+测试~~
-- ~~DApp 交易+UI~~
-- ~~Solana~~
+Step 0: autotest 机械测试
+  autotest-web3__evm_contract_test(dir="/opt/mcp/repos/<team>", ...)
+  autotest-web__api_e2e_test(hurl_content="...")
+  → 结果看 verdict + summary
 
-保留：
-- `api_e2e_test` / `api_get` / `api_post`（API 测试）
-- `browser_page_check` / `browser_user_flow`（前端测试）
-- `api_fuzz_test` / `api_load_test`（质量）
-
-**示例：给 DApp 项目定制**
-
-加你项目特定的链上操作：
-```
-DApp mint NFT | ⚡ `dapp_tx_and_ui_check(addr, "mint", [...], url, "Mint Success")`
-DApp stake | ⚡ `dapp_tx_and_ui_check(addr, "stake", [...], url, "Staked")`
-```
+Step 1: 按 verdict 决策
+  PASS → 进入 L1/L2 人工审查
+  FAIL → 标注 P0 → 修 → 重跑
 ```
 
-## 5. 验证
+---
 
-spawn tester agent 测试：
+## Step 5: 测试
+
 ```bash
 openclaw spawn tester "对项目执行测试，先读 TEST_SCENARIOS 文件"
 ```
 
-agent 应该能直接调用 `autotest-web3__evm_block` 等 tool 并返回结果。
+agent 能直接调用的 tool：
 
-## 6. 使用
-
-### tester agent 执行测试
-
-tester agent 收到任务后自动：
-1. 读 TEST_SCENARIOS 文件
-2. 分阶段调 MCP tool（CT/AT/FT）
-3. 写入测试报告
-
-### qa agent 调用测试
-
-qa agent 审查前先跑 autotest：
 ```
-autotest-web3__evm_contract_test(dir="/repo", ...)
-autotest-web__api_get(url="...", use_auth="test")
-autotest-web__browser_page_check(url="...", expect_text="...")
+autotest-web3__evm_contract_test(dir, match_contract, run_slither)
+autotest-web3__evm_tx_and_verify(addr, sig, args, expect_event)
+autotest-web__browser_page_check(url, expect_text, expect_title)
+autotest-web__api_e2e_test(hurl_content)
+autotest-web__api_get(url, use_auth="test")
+autotest-dapp__dapp_wallet_connect_flow(url, connect_btn)
+autotest-dapp__dapp_swap_flow(router, in, out, amount, url)
 ```
 
-### 认证（需登录的 API）
+**47 tools 总数，agent 自动发现。**
 
-```python
-api_get(url=".../api/backtest/runs", use_auth="test")     # test:test12345
-api_get(url=".../api/admin/dashboard", use_auth="admin")  # admin:admin12345
-```
+---
 
-内置账号自动登录 + 缓存 token + 自动刷新。无 auth 端点时优雅降级。
+## 47 Tools 速查
 
-## 返回值格式
-
-所有 MCP Tool 统一返回三层报告：
-
-```json
-{
-  "verdict": "PASS",
-  "summary": "🟢 evm_contract_test | forge build ✅ | forge test(33P/0F)",
-  "checks": [
-    {"step": "forge build", "passed": true, "status": "✅"}
-  ],
-  "details": "{... 原始 JSON，只在深究问题时展开 ...}"
-}
-```
-
-agent 只看 `verdict` + `summary` + `checks`，**不要解析 `details`**。
-
-## 工具速查
-
-### 链上测试 (autotest-web3)
+### autotest-web3 (21 tools) — 链上
 
 | Tool | 用途 |
 |------|------|
-| `evm_contract_test` | 合约编译 + 跑测试 + slither |
-| `evm_tx_and_verify` | 发交易 + 等 receipt + 验证 event |
-| `evm_deploy_and_verify` | 部署 + 验证合约 |
+| `evm_contract_test` | 合约编译 + 测试 + slither |
+| `evm_tx_and_verify` | 发交易 + receipt + event |
+| `evm_deploy_and_verify` | 部署 + 验证 |
 | `security_audit` | Slither + Echidna + Halmos |
-| `sol_deploy_and_test` | Solana anchor build + test + deploy |
-| `sol_transfer_and_confirm` | Solana 转账确认 |
-| `evm_balance` / `evm_call` / `evm_code` | 原子查询 |
+| `sol_deploy_and_test` | Solana anchor build + deploy |
+| `sol_transfer_and_confirm` | Solana 转账 |
+| `evm_balance` / `evm_call` / `evm_code` / … | 原子查询 |
 
-### 前端 + API (autotest-web)
+### autotest-web (18 tools) — 前端 + API
 
 | Tool | 用途 |
 |------|------|
 | `browser_page_check` | 页面检查 + 截图 |
 | `browser_user_flow` | 多步操作流 |
-| `api_e2e_test` | 一键 API E2E（hurl） |
+| `api_e2e_test` | API E2E（hurl） |
 | `api_get` / `api_post` | 单次请求（支持 `use_auth`） |
-| `api_fuzz_test` | API 模糊测试 |
+| `api_fuzz_test` | 模糊测试 |
 | `api_load_test` | 负载测试 |
-| `perf_audit_page` | Lighthouse 性能审计 |
-| `security_scan` | 容器安全扫描 |
+| `perf_audit_page` | Lighthouse |
+| `security_scan` | 容器安全 |
 
-### DApp 全链路 (autotest-dapp)
+### autotest-dapp (8 tools) — DApp 全链路
 
 | Tool | 用途 |
 |------|------|
-| `dapp_tx_and_ui_check` | 发链上交易 + 验证前端更新 |
-| `dapp_deploy_and_ui_check` | 部署合约 + 验证前端 |
+| `dapp_tx_and_ui_check` | 链上交易 + 前端验证 |
+| `dapp_deploy_and_ui_check` | 部署 + 前端验证 |
 | `dapp_wallet_connect_flow` | 钱包连接（mock MetaMask） |
 | `dapp_swap_flow` | Swap 全流程 |
 | `dapp_sol_transfer_and_ui` | Solana 转账 + UI |
 
-## 踩坑记录
+---
 
-| 坑 | 现象 | 解决 |
-|----|------|------|
-| 只配了 `/mcp` REST 端点 | agent 调工具报 -32602 | 必须用 `GET /sse` 端点 |
-| 忘了重启 Gateway | 工具列表为空 | 配完 MCP 必须 `gateway restart` |
-| agent 用 exec curl 绕过 MCP | 假阳性 | AGENTS.md 加 🔴 绝对禁令 |
-| 返回原始 JSON 太大 | token 浪费 + 截断 | 框架层自动包三层报告 |
-| auth 端点 404 | 需登录测试阻塞 | 等被测实现 auth，内置 test/admin 账号 |
-| DApp 钱包连接 | 无 MetaMask | 注入 mock `window.ethereum` |
+## 返回值格式
+
+所有 tool 统一返回三层报告：
+
+```json
+{
+  "verdict": "PASS",
+  "summary": "🟢 evm_contract_test | forge build ✅ | forge test(33P/0F)",
+  "checks": [{"step": "forge build", "passed": true, "status": "✅"}],
+  "details": "{... 原始 JSON，只在深究时展开 ...}"
+}
+```
+
+agent 只看 `verdict` + `summary` + `checks`，**不要解析 `details`**。
+
+---
+
+## 认证
+
+需登录 API 用 `use_auth`（内置账号自动处理）：
+
+```
+api_get(url="...", use_auth="test")      # test:test12345
+api_get(url="...", use_auth="admin")     # admin:admin12345
+```
+
+---
+
+## 排错
+
+| 现象 | 原因 | 解决 |
+|------|------|------|
+| tool 列表为空 | 没重启 Gateway | `openclaw gateway restart` |
+| `-32602 unknown tool` | transport 配错 | 确认用 `sse` + `/sse` 端点 |
+| agent 用 exec curl 绕过 | AGENTS.md 没加禁令 | 加 🔴 绝对禁令段 |
+| probe 500 | Python pycache 缓存旧代码 | `rm -rf __pycache__` + 重启 |
+| 连不上 8081-8083 | 防火墙/安全组 | 确认安全组放行端口 |
+| auth 端点 404 | 被测项目无 auth | `use_auth` 优雅降级，正常 |
+| DApp 钱包连接 | 无 MetaMask | 已注入 mock `window.ethereum` |
