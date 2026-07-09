@@ -102,6 +102,43 @@ code-review MCP 依赖代码管理 MCP 满足以下前置条件：
 | 工具未安装 | `{"tool": "solhint", "message": "tool not found", "severity": "P2"}` |
 | 无匹配文件 | `{"project": "/path", "language": "solidity", "issueCount": 0, "issues": []}` |
 
+## 版本一致性保证
+
+code-review 是机械检查（lint/format/types/complexity/deps），QA 子代理做 AI review（逻辑/边界/UX）。两者必须审查**同一版本代码**，否则结果不可信。
+
+### 机制：repo_sync → 共享 SHA
+
+代码管理 MCP 的 `repo_sync` 完成后，生成一个 Git SHA 作为**审查锚点**：
+
+```
+repo_sync → 得到 SHA: abc123
+    │
+    ├── code-review(机械) → 报告标注 SHA: abc123
+    ├── QA(AI review)      → 报告标注 SHA: abc123
+    └── security(深度审计)  → 报告标注 SHA: abc123
+```
+
+### 流程约束
+
+```
+1. repo_sync          → 同步到 /opt/mcp/repos/<team>/ → 记录 SHA
+2. code-review        → 机械检查（基于 SHA 对应的文件）
+3. 修复机械问题        → 修复 → repo_sync → 新的 SHA
+4. code-review(验证)  → 确认机械问题清零
+5. QA(AI review)      → 逻辑审查（同一 SHA）
+6. security           → 安全审计（同一 SHA）
+7. repo_push          → 推送到 GitHub
+```
+
+### 代码管理 MCP 建议提供
+
+| Tool | 说明 |
+|------|------|
+| `repo_sync` | 同步代码 + 返回 `{ team, sha, timestamp }` |
+| `repo_snapshot` | 仅获取当前 SHA，不重新同步 |
+
+code-review 和 QA 都应在报告中写入 `reviewed_sha`，确保可追溯"这份报告审的是哪个版本"。
+
 ## 接入 checklist
 
 - [ ] 代码管理 MCP 已在 43.156.46.187 上部署
@@ -110,6 +147,7 @@ code-review MCP 依赖代码管理 MCP 满足以下前置条件：
 - [ ] OpenClaw 实例 MCP 配置已指向 `http://43.156.46.187:9001/mcp`
 - [ ] 安全组 9001 端口已放行
 - [ ] `curl http://43.156.46.187:9001/health` 返回 `{"status": "ok"}`
+- [ ] 代码管理 MCP 提供 `repo_sync` 返回 SHA，code-review 报告标注该 SHA
 
 ## 不负责
 
