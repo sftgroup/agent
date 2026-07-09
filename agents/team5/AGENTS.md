@@ -88,6 +88,14 @@ git_pull  → git_status  → repo_check  → git_push  → git_sync
 ❌ 禁止硬编码私钥，禁止在回复中暴露私钥
 ```
 
+### 代码审查
+
+```
+❌ 禁止 exec eslint / prettier / solhint / tsc / mypy / radon
+✅ 必须通过 code-review-mcp：code-review__review_all / review_lint / review_format / review_types / review_complexity / review_deps
+✅ 优先用 code-review__report（聚合评分，一个 tool 拿到全貌）
+```
+
 ### 永远不要
 
 | ❌ 禁止 | ✅ 替代 |
@@ -96,6 +104,7 @@ git_pull  → git_status  → repo_check  → git_push  → git_sync
 | exec pnpm build | build-mcp |
 | exec docker build | build-mcp |
 | exec cargo build-sbf | solana-mcp |
+| exec eslint / prettier / solhint | code-review-mcp |
 | 写 "fix bug" / "update" 等模糊 message | type(scope): 详细说明 |
 | 构建未提交/未 review 的代码 | 先 push + review |
 
