@@ -64,36 +64,52 @@ cd /tmp && git clone git@github.com:sftgroup/agent.git
 
 # 把需要的 skill 复制到 OpenClaw skill 目录
 cp -r agent/skills/code-review-toolkit ~/.openclaw/skills/
-
-# 其他 skill 同理
 cp -r agent/skills/git-operations ~/.openclaw/skills/
 cp -r agent/skills/build-operations ~/.openclaw/skills/
+cp -r agent/skills/solana-anchor ~/.openclaw/skills/
 ```
 
 ### 2. 注册 MCP 工具（每个实例只需一次）
 
-编辑 `~/.openclaw/openclaw.json`，在 `mcp.servers` 中加入：
+编辑 `~/.openclaw/openclaw.json`，在 `tools.mcpServers` 中加入：
 
-```json
+```json5
 {
-  "mcp": {
-    "servers": {
+  "tools": {
+    "mcpServers": {
+      // 代码管理（push/pull/sync/审计）
       "git": {
-        "command": "http",
-        "args": ["http://43.156.46.187:PORT/mcp"],
-        "transport": "streamable-http"
+        "type": "http",
+        "url": "http://43.156.46.187:3082",
+        "tools": ["repo_register", "repo_list", "repo_info", "git_create_repo",
+                  "git_clone", "git_pull", "git_push", "git_sync", "git_sync_status",
+                  "git_status", "git_tags", "git_create_tag", "git_log", "git_audit",
+                  "git_checkout", "repo_check", "repo_sync", "repo_snapshot"]
       },
+      // 代码检查（15 种 lint 工具）
       "code-review": {
-        "command": "http",
-        "args": ["http://43.156.46.187:9001/mcp"],
-        "transport": "streamable-http"
+        "type": "http",
+        "url": "http://43.156.46.187:9001",
+        "tools": ["review_all", "review_lint", "review_format", "review_types", "review_complexity", "review_deps"]
+      },
+      // 项目构建
+      "build": {
+        "type": "http",
+        "url": "http://43.156.46.187:3081",
+        "tools": ["build_npm", "build_docker", "build_mobile", "build_status", "build_clean", "build_disk"]
+      },
+      // Solana 合约
+      "solana-build": {
+        "type": "http",
+        "url": "http://43.156.46.187:3080",
+        "tools": ["solana_build", "solana_deploy", "solana_read_state", "solana_verify_tx", "solana_balance", "solana_history"]
       }
     }
   }
 }
 ```
 
-> git-mcp 和 build-mcp 正在部署中。PORT 待分配。
+> 详细接入文档见 [docs/connect.md](docs/connect.md)，部署运维见 [docs/deploy.md](docs/deploy.md)。
 
 ### 3. 日常使用
 
@@ -173,10 +189,11 @@ Agent 会自动按 SKILL.md 里的规范调用 MCP 工具。**开发者不需要
 | 端口 | 服务 | 做什么 | 依赖 |
 |:----:|------|--------|------|
 | 9001 | code-review | 代码机械检查（15 种工具） | git-mcp `repo_sync` → `/opt/mcp/repos/<team>/` |
-| — | git-mcp | 代码管理（即将部署） | 无 |
-| — | build-mcp | 项目构建（即将部署） | git-mcp + code-review |
+| **3082** | **git-mcp** | **代码管理（push/pull/sync/审计）** | 无 |
+| **3081** | **build-mcp** | **项目构建（npm/docker/mobile）** | git-mcp + code-review |
+| **3080** | **solana-mcp** | **Solana 合约（编译/部署/读链）** | Solana CLI |
 
-> ⚠️ **重要约束**：git-mcp 的 `repoBasePath` 必须设为 `/opt/mcp/repos`，code-review 的 `REPOS_ROOT` 硬编码为 `/opt/mcp/repos`。两者路径必须一致。部署 git-mcp 时在 `~/.git-mcp/config.json` 中配置 `"repoBasePath": "/opt/mcp/repos"`。
+> 全部 4 个 MCP 服务已部署并运行。`repoBasePath` 已配置为 `/opt/mcp/repos`，与 code-review 路径一致。
 
 ### 如何验证连通
 
