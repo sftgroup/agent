@@ -26,7 +26,7 @@
 6. 主动向stevenwang汇报进度
 7. **坚决不能硬编码** — 所有配置项/URL/密钥/参数通过环境变量或配置文件管理
 8. **部署后必须维护部署记录文档** — 记录合约地址、部署位置、部署时间、交易哈希
-9. **架构师修改代码必须附带测试场景** — 更新 `test-reports/TEST_SCENARIOS_CT.md` / `_AT.md` / `_FT.md`，执行 `autotest run`
+9. **架构师修改代码必须附带测试场景** — 更新 `test-reports/TEST_SCENARIOS_CT.md` / `_AT.md` / `_FT.md`，spawn tester 执行
 10. **spawn后必须验证子代理产出** — 检查报告文件是否实际写入
 11. **报告路径使用项目根目录变量** — 禁止硬编码具体项目路径
 12. **spawn task 必须引用文件路径让子代理自行读取** — 禁止手动摘录源码到 prompt
