@@ -148,6 +148,24 @@ bash ~/.openclaw/skills/openclaw-instance-doctor/scripts/diagnose.sh
 
 ---
 
+## 接入后：清理本地冗余工具
+
+接入 MCP 后，子 agent 不再需要本地装安全工具。**SSH 到每台实例执行以下清理**：
+
+```bash
+# 卸载安全扫描工具（MCP 已替代）
+pip3 uninstall -y --break-system-packages slither-analyzer mythril bandit semgrep pip-audit 2>/dev/null
+sudo rm -f /usr/local/bin/{gitleaks,trivy,nuclei,echidna,aderyn}
+sudo apt-get remove -y nmap 2>/dev/null
+pip3 cache purge
+```
+
+> 保留 eslint、prettier、tsc、solhint、ruff、black、mypy、radon — code-review MCP 审查时在服务器上运行，本地开发可能用到。
+
+**清理效果**：释放约 500MB/实例，AGENTS.md 从 754 行精简到 222 行（-70%）。
+
+---
+
 ## 常见问题
 
 **Q: 外网连不上 MCP？**
