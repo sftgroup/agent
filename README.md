@@ -78,6 +78,11 @@ cp -r agent/skills/build-operations ~/.openclaw/skills/
 {
   "mcp": {
     "servers": {
+      "git": {
+        "command": "http",
+        "args": ["http://43.156.46.187:PORT/mcp"],
+        "transport": "streamable-http"
+      },
       "code-review": {
         "command": "http",
         "args": ["http://43.156.46.187:9001/mcp"],
@@ -88,7 +93,7 @@ cp -r agent/skills/build-operations ~/.openclaw/skills/
 }
 ```
 
-> 目前只开放了 code-review（:9001）。git-mcp 和 build-mcp 正在部署中。
+> git-mcp 和 build-mcp 正在部署中。PORT 待分配。
 
 ### 3. 日常使用
 
@@ -165,11 +170,13 @@ Agent 会自动按 SKILL.md 里的规范调用 MCP 工具。**开发者不需要
 
 ### 中心服务器：43.156.46.187
 
-| 端口 | 服务 | 做什么 |
-|:----:|------|--------|
-| 9001 | code-review | 代码机械检查（15 种工具） |
-| — | git-mcp | 代码管理（即将部署） |
-| — | build-mcp | 项目构建（即将部署） |
+| 端口 | 服务 | 做什么 | 依赖 |
+|:----:|------|--------|------|
+| 9001 | code-review | 代码机械检查（15 种工具） | git-mcp `repo_sync` → `/opt/mcp/repos/<team>/` |
+| — | git-mcp | 代码管理（即将部署） | 无 |
+| — | build-mcp | 项目构建（即将部署） | git-mcp + code-review |
+
+> ⚠️ **重要约束**：git-mcp 的 `repoBasePath` 必须设为 `/opt/mcp/repos`，code-review 的 `REPOS_ROOT` 硬编码为 `/opt/mcp/repos`。两者路径必须一致。部署 git-mcp 时在 `~/.git-mcp/config.json` 中配置 `"repoBasePath": "/opt/mcp/repos"`。
 
 ### 如何验证连通
 
@@ -184,7 +191,7 @@ curl http://43.156.46.187:9001/health
 ## 常见问题
 
 ### Q: 这个仓库和我本机上的代码是什么关系？
-本机代码通过 git-mcp 同步到中心服务器上的 `/opt/mcp/repos/<team>/`。code-review 和 build-mcp 都在中心服务器上读写这些代码。
+本机代码通过 git-mcp 的 `repo_sync` 同步到中心服务器上的 `/opt/mcp/repos/<team>/`。code-review 读取这个目录做检查。git-mcp 的 `repoBasePath` 必须和 code-review 的 `REPOS_ROOT` 指向同一个目录。
 
 ### Q: 需要我在每台机器上装 lint 工具吗？
 **不需要。** 所有 lint 工具（eslint/solhint/ruff 等 15 种）都装在中心服务器上，你只需要在 OpenClaw 里注册 MCP 就行了。
