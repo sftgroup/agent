@@ -1,6 +1,8 @@
 ---
 name: solana-anchor
-description: "Solana Anchor framework: SBF compilation, PDA/Timelock/SPL Token design patterns, deployment (upgrade), bug diagnosis, and mainnet safety."
+description: "Solana Anchor framework: SBF compilation, PDA/Timelock/SPL Token patterns, deploy, debug, and mainnet safety."
+user-invocable: true
+metadata: { "openclaw": { "requires": { "bins": ["solana", "cargo"], "anyBins": ["cargo-build-sbf"] }, "os": ["linux"] } }
 ---
 
 # Solana Anchor 合约开发 Skill
