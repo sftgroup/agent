@@ -82,9 +82,65 @@ Step 1: git_status     — Ensure working tree is clean
 Step 2: git_pull       — If dirty, commit/stash first
 ```
 
+## Commit Message Rules (MANDATORY)
+
+**Every commit message must follow this format:**
+
+```
+<type>(<scope>): <what changed — must be specific>
+
+<body — why this change, what problem it solves, which files modified>
+```
+
+**Types:** `feat` `fix` `refactor` `docs` `chore` `test` `perf` `security`
+
+**scopes:** `mcp` `skill` `contract` `frontend` `api` `docker` `mobile` `db` `config`
+
+**The message body MUST include:**
+1. What was changed (specific files/modules)
+2. Why it was changed (bug fix, new feature, optimization)
+3. What effect it has (before/after behavior)
+
+**✅ Good examples:**
+
+```
+fix(solana-mcp): use temp file for deploy keypair instead of stdin piping
+
+Before: echo keypair | solana deploy --keypair /dev/stdin leaked
+private key in process list (visible via ps aux).
+After: write keypair to temp file with chmod 600, pass via --keypair
+flag, and immediate unlink after deploy. Modified deploy.ts.
+```
+
+```
+feat(git-mcp): add incremental local storage — push to MCP before GitHub
+
+Agent git_push now commits to MCP local repo only. GitHub sync is a
+separate git_sync call. This prevents accidental overwrites and provides
+full local audit trail. Added sync_log table, git_sync tool, git_sync_status
+for cross-repo visibility. Modified: gitOps.ts, db.ts, server.ts.
+```
+
+**❌ Bad examples (will be rejected):**
+
+```
+update code        ← doesn't say what
+fix bug            ← doesn't say which bug or what was fixed
+v1.2               ← no context at all
+wip                ← doesn't say anything
+```
+
+**Agent responsibilities:**
+- Write the commit message yourself — don't ask the user what to write
+- Inspect `git_status` to see what files changed, then describe them
+- If fixing a bug: explain the root cause and the fix
+- If adding a feature: explain what it does and how it works
+- Always include which files were modified
+
 ## NEVER Do These
 
 - ❌ Run `git push` or `git pull` directly via exec — no audit, no checks, no incremental storage
+- ❌ Vague commit messages like "fix", "update", "wip" — must be specific
 - ❌ Force-push unless the user explicitly commands it
 - ❌ Push when `repo_check` failed without user approval
 - ❌ Push when `guardFiles` changed without explaining why
