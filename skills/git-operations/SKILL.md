@@ -15,9 +15,11 @@ metadata: { "openclaw": { "os": ["linux"] } }
 
 | Item | Value |
 |------|-------|
-| **MCP server** | git-mcp |
-| **URL** | `http://<server>:3082` |
-| **All tools below** | call via OpenClaw MCP protocol, NOT curl/HTTP |
+| **MCP server** | `git` |
+| **Protocol** | MCP JSON-RPC (standard `tools/call`) |
+| **URL** | `http://43.156.46.187:3082` |
+
+Tools are auto-discovered via `tools/list`.
 
 ## Architecture
 
