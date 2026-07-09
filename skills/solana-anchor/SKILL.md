@@ -7,7 +7,16 @@ metadata: { "openclaw": { "requires": { "bins": ["solana", "cargo"], "anyBins": 
 
 # Solana Anchor 合约开发 Skill
 
-> 基于 Contra AI NFT 合约编译部署实战总结。适用 Anchor 框架及原生 Solana 程序。本机工具链：Solana CLI 2.3.3, platform-tools v1.48, Node v22。
+> 基于 Contra AI NFT 合约编译部署实战总结。适用 Anchor 框架及原生 Solana 程序。
+> 编译部署通过 solana-mcp 统一执行，不要本地跑 `cargo build-sbf` 或 `solana program deploy`。
+
+## MCP Dependency
+
+| Item | Value |
+|------|-------|
+| **编译部署 →** | solana-mcp (`http://<server>:3080`) |
+| **代码管理 →** | git-mcp (`http://<server>:3082`)，遵循 git-operations skill |
+| **本地工具链 →** | Solana CLI 2.3.3 + platform-tools v1.48 + Node v22（skill 本地编译教学参考用，实际部署走 MCP） |
 
 ---
 
@@ -185,7 +194,30 @@ require!(nft_mint.key == expected_mint_pda, Error::InvalidMint);
 
 ---
 
-## Build & Deploy
+## Build & Deploy (via solana-mcp)
+
+**实际部署时通过 solana-mcp 执行，不要本地跑命令。**
+
+```
+# 编译
+solana_build(projectName="contra-ai", edition="2021")
+→ { ok: true, soPath: "/path/to/contra_ai.so" }
+
+# 部署
+solana_deploy(soPath=".../contra_ai.so", programId="Gw8r...T8aE", keypairName="default")
+→ { ok: true, signature: "..." }
+
+# 验证
+solana_verify_tx(signature="...")
+→ { ok: true, status: "confirmed" }
+
+# 读链上状态
+solana_read_state(programId="Gw8r...T8aE", seed="contra_state")
+```
+
+### 本地编译（仅本地开发验证用）
+
+以下为教学参考。生产部署走 solana-mcp。
 
 **Build:**
 

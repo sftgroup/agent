@@ -5,129 +5,105 @@ user-invocable: true
 metadata: { "openclaw": { "os": ["linux"] } }
 ---
 
-# Build Operations — Centralized Build Service
+# Build Operations — Centralized Build via build-mcp
 
-> All builds must go through the build-mcp server. Never run `pnpm build` / `docker build` / `gradle` / `xcodebuild` directly.
-> The MCP server provides isolated, auditable, and reproducible builds.
+> All builds must go through build-mcp. Never run `pnpm build` / `docker build` / `gradle` / `xcodebuild` directly.
+> MCP provides isolated, auditable, reproducible builds.
+
+## MCP Dependency
+
+| Item | Value |
+|------|-------|
+| **MCP server** | build-mcp |
+| **URL** | `http://<server>:3081` |
+| **Git dependency** | This skill calls git-mcp tools for pre-build checks |
+| **Git MCP tools used** | `git_pull`, `git_push`, `git_sync` (from git-mcp) |
+| **All build tools below** | call via OpenClaw MCP protocol |
 
 ---
 
-## When to Use Each Tool
+## Tool Reference
 
-| Situation | Tool | Why |
-|-----------|------|-----|
-| Frontend / Node.js build | `build_npm` | Vue/React/Next/Nuxt + monorepo. Specs: pnpm, npm, yarn, bun. |
-| Docker image build + push | `build_docker` | Build + tag + push to any registry. |
-| Mobile app build | `build_mobile` | React Native (iOS/Android), Flutter, Expo. |
-| Check build history | `build_status` | See what was built, when, by whom, with what result. |
-| Clean old artifacts | `build_clean` | Delete builds older than N hours or by specific ID. |
-| Check disk usage | `build_disk` | Workspace disk consumption, build count, age range. |
+| Tool | Purpose | Key params |
+|------|---------|------------|
+| `build_npm` | Frontend / Node.js | `repoUrl`, `branch`, `buildCmd`, `buildDir`(optional) |
+| `build_docker` | Docker image | `repoUrl`, `imageName`, `push`, `registry` |
+| `build_mobile` | RN / Flutter / Expo | `repoUrl`, `platform`, `framework`, `buildType` |
+| `build_status` | Build history | `buildId`(optional), `limit` |
+| `build_clean` | Clean old artifacts | `olderThanHours`, `buildId`(optional) |
+| `build_disk` | Disk usage | none |
 
 ---
 
 ## Build Workflow (MANDATORY)
 
-**Before any build, the agent must:**
+### Pre-Build Checklist
+
+Before ANY build, run these with **git-mcp**:
 
 ```
-Step 1: git_pull       — Ensure code is current (via git-mcp)
-Step 2: git_push       — Ensure changes are committed (via git-mcp)
-Step 3: git_sync       — Ensure code is on GitHub (via git-mcp)
-Step 4: build_*        — Trigger the build
-Step 5: build_status   — Confirm the build succeeded
+1. git_pull("name")       — Pull latest code (via git-mcp)
+2. git_push("name", ...)  — Commit changes if dirty (via git-mcp)
+3. git_sync("name")       — Push to GitHub so build has traceable source
 ```
 
-**Never build code that isn't committed and synced.** Code built against a dirty working tree has no traceable source — you can't reproduce it or debug it later.
+**Never build code that isn't committed + synced to GitHub.** Code from a dirty tree can't be reproduced.
 
-### Frontend Build
-
-```
-POST /tools/build_npm {
-  "repoUrl": "https://github.com/sftgroup/web-app.git",
-  "branch": "main",
-  "buildCmd": "pnpm build",
-  "buildDir": "packages/frontend",
-  "env": { "VITE_API_URL": "https://api.example.com" }
-}
-→ { ok: true, buildId: "npm-<uuid>", artifactPath: "/tmp/build-mcp/npm-<uuid>/dist", ... }
-```
-
-Tools detected: `pnpm`, `npm`, `yarn`, `bun`. Monorepo support via `buildDir`.
-
-### Docker Build
+### One-Shot Build
 
 ```
-POST /tools/build_docker {
-  "repoUrl": "https://github.com/sftgroup/api.git",
-  "imageName": "sftgroup/api:v1.2.0",
-  "push": true,
-  "registry": "dockerhub"
-}
-→ { ok: true, buildId: "docker-<uuid>", imageName: "sftgroup/api:v1.2.0", ... }
+# Frontend
+build_npm(repoUrl="https://github.com/sftgroup/web-app.git", branch="main",
+          buildCmd="pnpm build", env={VITE_API_URL: "https://api.example.com"})
+
+# Docker
+build_docker(repoUrl="https://github.com/sftgroup/api.git", buildDir=".",
+             imageName="sftgroup/api:v1.2.0", push=true)
+
+# Mobile
+build_mobile(repoUrl="https://github.com/sftgroup/mobile.git",
+             platform="ios", framework="react-native", scheme="SFTApp")
 ```
 
-### Mobile Build
+### After Build
 
-```
-POST /tools/build_mobile {
-  "repoUrl": "https://github.com/sftgroup/mobile.git",
-  "platform": "ios",
-  "framework": "react-native",
-  "buildType": "release",
-  "scheme": "SFTApp"
-}
-→ { ok: true, buildId: "mobile-<uuid>", artifacts: ["SFTApp.ipa"], ... }
-```
+| Action | Tool |
+|--------|------|
+| Verify build succeeded | `build_status(limit=1)` |
+| Get artifact path | returned in build result as `artifactPath` |
+| Clean up if build failed | `build_clean(buildId="the-failed-id")` |
+| Check disk after many builds | `build_disk()` |
+| Periodic cleanup | `build_clean(olderThanHours=48)` |
 
 ---
 
 ## Build Environment
 
-| Aspect | Details |
-|--------|---------|
-| **Isolation** | Each build runs in `/tmp/build-mcp/<type>-<uuid>/`. No cross-contamination. |
-| **Node.js** | pnpm 9+ preferred. Falls back to npm → yarn → bun. |
-| **Docker** | BuildKit enabled. Supports multi-platform (linux/amd64, linux/arm64). |
-| **Android** | Requires `ANDROID_HOME` set. Uses Gradle wrapper. |
-| **iOS** | Requires Xcode on macOS build server. Uses xcodebuild + archive. |
-| **Flutter** | Requires Flutter SDK in PATH. Detects from `pubspec.yaml`. |
-| **Expo** | Requires `EXPO_TOKEN` env var. Uses EAS Build or local `expo build`. |
+| Type | Isolation | Toolchain |
+|------|-----------|-----------|
+| **npm** | `/tmp/build-mcp/npm-<id>/` | pnpm 9+ preferred. Falls back npm→yarn→bun |
+| **docker** | `/tmp/build-mcp/docker-<id>/` | Docker BuildKit, linux/amd64+arm64 |
+| **mobile** | `/tmp/build-mcp/mobile-<id>/` | Android: `ANDROID_HOME` + Gradle<br>iOS: Xcode + xcodebuild<br>Flutter: SDK in PATH<br>Expo: `EXPO_TOKEN` env |
 
 ---
 
 ## NEVER Do These
 
-- ❌ Run `pnpm build`, `npm run build`, `yarn build` directly via exec
+- ❌ Run `pnpm build` / `npm run build` / `yarn build` directly via exec
 - ❌ Run `docker build` or `docker push` directly
 - ❌ Run `./gradlew assembleRelease` or `xcodebuild` directly
 - ❌ Build code that isn't committed + synced to GitHub
-- ❌ Build in the project directory (use build-mcp's isolated workspace)
+- ❌ Build in project directory — use build-mcp's isolated workspace
 - ❌ Leave builds accumulating — run `build_clean` periodically
 
 ---
 
 ## Troubleshooting
 
-| Problem | Action |
-|---------|--------|
-| Build failed | Check `build_status` for error output from the failed build |
-| "No space left on device" | Run `build_disk` to check usage, then `build_clean` to free space |
-| "Toolchain not found" | Verify build server dependencies: Node 22+, Docker, pnpm |
-| Mobile build failed | Check `ANDROID_HOME` (Android) or Xcode version (iOS) |
-| Docker push failed | Check `registries` config in `~/.build-mcp/config.json` |
-
----
-
-## Periodic Maintenance
-
-```
-# Check disk usage weekly
-POST /tools/build_disk  {}
-
-# Clean builds older than 48 hours
-POST /tools/build_clean  { "olderThanHours": 48 }
-```
-
-## MCP Server URL
-
-The build-mcp server is at `http://<server>:3081`. All tools accessible via `POST /tools/:name`.
+| Problem | Check |
+|---------|-------|
+| Build failed | `build_status(limit=5)` — read error output |
+| No disk space | `build_disk()` → `build_clean(olderThanHours=1)` |
+| Toolchain missing | Verify build server: Node 22+, Docker, pnpm |
+| Mobile failed | Android: check `ANDROID_HOME`. iOS: Xcode version. Flutter: SDK in PATH |
+| Docker push failed | Verify `registries` in `~/.build-mcp/config.json` |
