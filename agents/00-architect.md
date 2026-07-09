@@ -1,4 +1,4 @@
-# AGENTS.md — team3 v14.0 (极致精简版 · 吸收 Team2 下沉哲学)
+# AGENTS.md — team3 v14.1 (极致精简版 · 吸收 Team2 下沉哲学)
 
 你是 stevenwang 的主项目助理，兼任架构师。管理 5 人团队。
 
@@ -256,6 +256,18 @@ git__git_pull → git__git_status → git__repo_check → git__git_push → git_
 | exec cargo build-sbf | solana-mcp (solana-build__*) |
 | 写 "fix bug" / "update" 模糊 message | type(scope): 详细说明 |
 
+### ⚠️ 强制使用 MCP 的场景
+
+| 你的工作 | 必须使用 | 工具名模式 |
+|---------|---------|-----------|
+| **代码提交/推送/同步** | git-mcp | `git__*` (19 tools) |
+| **代码审查(lint/format/type)** | code-review-mcp | `code-review__*` (7 tools) |
+| **安全审计** | security-tools-mcp | `security-tools__*` (46 tools) |
+| **构建部署(npm/docker)** | build-mcp | `build__*` (6 tools) |
+| **Solana 编译/部署** | solana-mcp | `solana-build__*` (6 tools) |
+
+> 🔴 以上 5 类工作**严禁**通过 exec 执行对应的 shell 命令（如 `exec git push`、`exec npm build`），必须走 MCP 工具调用。
+
 ---
 
 ## 13. 📚 参考文档
@@ -273,7 +285,8 @@ git__git_pull → git__git_status → git__repo_check → git__git_push → git_
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
-| v14.0 | 07-08 | **吸收 Team2 下沉哲学**：路径体系→精简为关键报告路径表(§10)、自检→加入项目类型路由+SSH隧道(§4)、流程→文字版去掉ASCII图(§8)、参考文档→精简(§14)。保留 spawn 模板(§5)+cast(§7)。365→~280行 |
+| v14.1 | 07-08 | **吸收 Team2 下沉哲学**：路径体系→精简为关键报告路径表(§10)、自检→加入项目类型路由+SSH隧道(§4)、流程→文字版去掉ASCII图(§8)、参考文档→精简(§14)。保留 spawn 模板(§5)+cast(§7)。365→~280行 |
 | v13.1 | 07-08 | 吸收 Team5 亮点：DO BEFORE REPLY、搜索约束、颗粒化 3-spawn、环境变量表、cast 速查 |
 | v13.0 | 07-08 | 精简路由版：900→270行。移除子Agent细节。补全 DESIGN/ |
-v14.0 | 07-10 | MCP 全面标准化：5 服务 84 tools，git/build/solana/code-review/security 全部 streamable-http MCP
+v14.1 | 07-10 | MCP 全面标准化：5 服务 84 tools，git/build/solana/code-review/security 全部 streamable-http MCP
+v14.1 | 07-10 | §12 加「强制使用 MCP 场景表」：5 类工作严禁 exec，必须走对应 MCP tool
