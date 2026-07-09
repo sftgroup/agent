@@ -1,0 +1,750 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/home/ubuntu/.openclaw/workspace",
+      "sandbox": {
+        "browser": {
+          "enabled": false
+        }
+      },
+      "model": {
+        "primary": "deepseek/deepseek-v4-pro"
+      },
+      "skipOptionalBootstrapFiles": [
+        "SOUL.md",
+        "HEARTBEAT.md",
+        "IDENTITY.md",
+        "USER.md"
+      ],
+      "contextInjection": "always",
+      "bootstrapMaxChars": 20000,
+      "bootstrapTotalMaxChars": 50000,
+      "subagents": {
+        "allowAgents": [
+          "*"
+        ],
+        "maxConcurrent": 5,
+        "maxSpawnDepth": 2,
+        "maxChildrenPerAgent": 10,
+        "runTimeoutSeconds": 600,
+        "archiveAfterMinutes": 60
+      },
+      "timeoutSeconds": 600,
+      "maxConcurrent": 4,
+      "contextTokens": 1000000,
+      "compaction": {
+        "reserveTokens": 12000,
+        "keepRecentTokens": 20000,
+        "maxHistoryShare": 0.6,
+        "recentTurnsPreserve": 3,
+        "notifyUser": true
+      },
+      "mediaMaxMb": 200,
+      "memorySearch": {
+        "provider": "openai",
+        "model": "text-embedding-v4",
+        "sources": [
+          "memory"
+        ]
+      },
+      "params": {
+        "cacheRetention": "long"
+      },
+      "heartbeat": {
+        "every": "55m"
+      },
+      "contextPruning": {
+        "mode": "cache-ttl",
+        "ttl": "1h"
+      }
+    },
+    "list": [
+      {
+        "id": "team3",
+        "default": true,
+        "name": "team3 - Build Team",
+        "description": "team3 — 全栈开发团队：需求分析、架构设计、任务调度、部署。使用 DeepSeek V4 Pro",
+        "model": {
+          "primary": "deepseek/deepseek-v4-pro"
+        },
+        "identity": {
+          "name": "team3",
+          "emoji": "🛠️",
+          "theme": "sharp"
+        },
+        "subagents": {
+          "delegationMode": "prefer",
+          "allowAgents": [
+            "tester",
+            "qa",
+            "security",
+            "security-check",
+            "ui-designer",
+            "ux-researcher",
+            "design-advisor",
+            "ui-design-critique",
+            "security-check-centralized"
+          ]
+        },
+        "heartbeat": {
+          "lightContext": true
+        },
+        "contextInjection": "always",
+        "bootstrapTotalMaxChars": 50000,
+        "workspace": "/home/ubuntu/.openclaw/workspace/team3",
+        "memorySearch": {
+          "enabled": true,
+          "provider": "openai",
+          "model": "text-embedding-v4",
+          "sources": [
+            "memory"
+          ]
+        }
+      },
+      {
+        "id": "qa",
+        "name": "QA Engineer",
+        "description": "裁判+医生：常规Code Review(L1+L2，70%工作)、Bug诊断分析根因输出诊断报告、影响评估、修复建议(文本描述非代码)、验证修复是否成功",
+        "model": {
+          "primary": "deepseek/deepseek-v4-pro"
+        },
+        "identity": {
+          "name": "QA Engineer",
+          "emoji": "🧪",
+          "theme": "sharp"
+        },
+        "skills": [],
+        "workspace": "/home/ubuntu/.openclaw/workspace/subagents/qa",
+        "heartbeat": {
+          "timeoutSeconds": 300
+        }
+      },
+      {
+        "id": "security",
+        "name": "Security Reviewer",
+        "description": "资深安全：深度Code Review L3+L4、安全漏洞扫描、合约审计、依赖风险、代码异味、架构审查",
+        "model": {
+          "primary": "zhipu/glm-5.2"
+        },
+        "identity": {
+          "name": "Security",
+          "emoji": "🔒",
+          "theme": "sharp"
+        },
+        "skills": [],
+        "workspace": "/home/ubuntu/.openclaw/workspace/subagents/security",
+        "heartbeat": {
+          "timeoutSeconds": 300
+        }
+      },
+      {
+        "id": "tester",
+        "name": "Test Engineer",
+        "description": "质量验证：编写Playwright E2E测试脚本、编写Jest单元测试、运行Lighthouse性能/无障碍评分、通过Woodpecker MCP监控测试状态、发现Bug时提交Gitea Issue",
+        "model": {
+          "primary": "deepseek/deepseek-v4-pro"
+        },
+        "identity": {
+          "name": "Tester",
+          "theme": "sharp",
+          "emoji": "✅"
+        },
+        "skills": [],
+        "workspace": "/home/ubuntu/.openclaw/workspace/subagents/tester",
+        "heartbeat": {
+          "timeoutSeconds": 300
+        }
+      },
+      {
+        "id": "security-check",
+        "name": "Security Check",
+        "description": "安全检测：依赖漏洞、CVE扫描、代码安全审计、配置合规检查、敏感信息泄露检测。",
+        "workspace": "/home/ubuntu/.openclaw/workspace/subagents/security-check",
+        "model": {
+          "primary": "deepseek/deepseek-v4-pro"
+        },
+        "identity": {
+          "name": "Security Scanner",
+          "theme": "sharp",
+          "emoji": "🛡️"
+        },
+        "heartbeat": {
+          "timeoutSeconds": 300
+        }
+      },
+      {
+        "id": "ui-designer",
+        "name": "UI Designer",
+        "description": "UI/UX设计师：基于PRD出设计规范(配色/组件/布局/字体/间距/交互)，只出规范不写代码",
+        "workspace": "/home/ubuntu/.openclaw/workspace/subagents/ui-designer",
+        "model": {
+          "primary": "qwen/qwen3-vl-flash"
+        },
+        "skills": [],
+        "identity": {
+          "name": "UI Designer",
+          "theme": "sharp",
+          "emoji": "🎨"
+        }
+      },
+      {
+        "id": "ux-researcher",
+        "name": "UX Researcher",
+        "description": "UX研究员：用户画像/交互流程分析/竞品UX调研/痛点与机会点识别",
+        "workspace": "/home/ubuntu/.openclaw/workspace/subagents/ux-researcher",
+        "model": {
+          "primary": "deepseek/deepseek-v4-pro"
+        },
+        "skills": [],
+        "identity": {
+          "name": "UX Researcher",
+          "theme": "sharp",
+          "emoji": "🧠"
+        }
+      },
+      {
+        "id": "design-advisor",
+        "name": "Design Advisor",
+        "description": "设计灵感顾问：竞品UI搜集/设计趋势分析/灵感Moodboard/具体设计建议",
+        "workspace": "/home/ubuntu/.openclaw/workspace/subagents/design-advisor",
+        "model": {
+          "primary": "deepseek/deepseek-v4-pro"
+        },
+        "skills": [],
+        "identity": {
+          "name": "Design Advisor",
+          "theme": "sharp",
+          "emoji": "💡"
+        }
+      },
+      {
+        "id": "ui-design-critique",
+        "name": "UI Design Critic",
+        "description": "🎨 设计评审专家：四维量化独立评审（视觉层级/信息架构/认知负荷/情感共鸣）",
+        "workspace": "/home/ubuntu/.openclaw/workspace/subagents/ui-design-critique",
+        "model": {
+          "primary": "deepseek/deepseek-v4-pro"
+        },
+        "skills": [],
+        "heartbeat": {
+          "timeoutSeconds": 300
+        },
+        "identity": {
+          "name": "UI Design Critic",
+          "theme": "sharp",
+          "emoji": "🎨"
+        }
+      },
+      {
+        "id": "security-check-centralized",
+        "name": "Centralized Security Scanner",
+        "description": "🏢 中心化项目安全扫描：CSC-1/2/3 五层扫描（SAST+DAST+SCA+基础设施+合规），OWASP Top 10 对齐",
+        "workspace": "/home/ubuntu/.openclaw/workspace/subagents/security-check-centralized",
+        "model": {
+          "primary": "deepseek/deepseek-v4-pro"
+        },
+        "heartbeat": {
+          "timeoutSeconds": 300
+        },
+        "identity": {
+          "name": "Centralized Scanner",
+          "theme": "sharp",
+          "emoji": "🏢"
+        }
+      }
+    ]
+  },
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "token",
+      "token": "12f066697bfdc6c5602df534adc7f909102f74aa72bbf2a0"
+    },
+    "port": 14986,
+    "bind": "lan",
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "controlUi": {
+      "allowedOrigins": [
+        "http://43.133.37.213:14986"
+      ],
+      "allowInsecureAuth": true,
+      "dangerouslyDisableDeviceAuth": true,
+      "basePath": "/klf94h"
+    }
+  },
+  "session": {
+    "dmScope": "per-channel-peer",
+    "reset": {
+      "mode": "idle",
+      "idleMinutes": 480
+    },
+    "maintenance": {
+      "mode": "enforce",
+      "pruneAfter": "30d",
+      "maxEntries": 1000,
+      "resetArchiveRetention": "7d"
+    }
+  },
+  "tools": {
+    "profile": "full",
+    "deny": []
+  },
+  "skills": {
+    "install": {
+      "nodeManager": "npm"
+    },
+    "entries": {
+      "1password": {
+        "enabled": false
+      },
+      "blogwatcher": {
+        "enabled": false
+      },
+      "blucli": {
+        "enabled": false
+      },
+      "camsnap": {
+        "enabled": false
+      },
+      "coding-agent": {
+        "enabled": false
+      },
+      "discord": {
+        "enabled": false
+      },
+      "eightctl": {
+        "enabled": false
+      },
+      "gemini": {
+        "enabled": false
+      },
+      "gifgrep": {
+        "enabled": false
+      },
+      "gog": {
+        "enabled": false
+      },
+      "goplaces": {
+        "enabled": false
+      },
+      "himalaya": {
+        "enabled": false
+      },
+      "mcporter": {
+        "enabled": false
+      },
+      "nano-pdf": {
+        "enabled": false
+      },
+      "obsidian": {
+        "enabled": false
+      },
+      "openai-whisper": {
+        "enabled": false
+      },
+      "openai-whisper-api": {
+        "enabled": false
+      },
+      "openhue": {
+        "enabled": false
+      },
+      "oracle": {
+        "enabled": false
+      },
+      "ordercli": {
+        "enabled": false
+      },
+      "sag": {
+        "enabled": false
+      },
+      "session-logs": {
+        "enabled": false
+      },
+      "sherpa-onnx-tts": {
+        "enabled": false
+      },
+      "slack": {
+        "enabled": false
+      },
+      "songsee": {
+        "enabled": false
+      },
+      "sonoscli": {
+        "enabled": false
+      },
+      "spotify-player": {
+        "enabled": false
+      },
+      "summarize": {
+        "enabled": false
+      },
+      "tencent-cloud-cos": {
+        "enabled": false
+      },
+      "tencent-meeting-mcp": {
+        "enabled": false
+      },
+      "trello": {
+        "enabled": false
+      },
+      "voice-call": {
+        "enabled": false
+      },
+      "wacli": {
+        "enabled": false
+      },
+      "xurl": {
+        "enabled": false
+      },
+      "gh-issues": {
+        "enabled": false
+      },
+      "lightclawbot-cron": {
+        "enabled": false
+      },
+      "qqbot-channel": {
+        "enabled": false
+      },
+      "qqbot-media": {
+        "enabled": false
+      },
+      "qqbot-remind": {
+        "enabled": false
+      },
+      "wecom-send-media": {
+        "enabled": false
+      },
+      "wecom-send-template-card": {
+        "enabled": false
+      },
+      "github": {
+        "enabled": false
+      }
+    }
+  },
+  "wizard": {
+    "lastRunAt": "2026-06-29T08:04:15.567Z",
+    "lastRunVersion": "2026.6.9",
+    "lastRunCommand": "doctor",
+    "lastRunMode": "local"
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.6.11",
+    "lastTouchedAt": "2026-07-09T20:31:31.141Z"
+  },
+  "messages": {
+    "groupChat": {
+      "visibleReplies": "automatic"
+    }
+  },
+  "browser": {
+    "enabled": true,
+    "executablePath": "/home/ubuntu/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome",
+    "noSandbox": true,
+    "defaultProfile": "user",
+    "profiles": {
+      "user": {
+        "cdpUrl": "http://localhost:9222",
+        "driver": "existing-session",
+        "attachOnly": true,
+        "color": "#4285F4",
+        "userDataDir": "/home/ubuntu/.openclaw/browser-existing-session"
+      }
+    },
+    "ssrfPolicy": {
+      "dangerouslyAllowPrivateNetwork": true
+    }
+  },
+  "models": {
+    "providers": {
+      "deepseek": {
+        "baseUrl": "https://api.deepseek.com/v1",
+        "apiKey": "sk-643b1efb705042d593e8b3d67d68182a",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "deepseek-v4-flash",
+            "name": "DeepSeek V4 Flash"
+          },
+          {
+            "id": "deepseek-v4-pro",
+            "name": "DeepSeek V4 Pro"
+          }
+        ],
+        "timeoutSeconds": 300
+      },
+      "moonshot": {
+        "baseUrl": "https://api.moonshot.cn/v1",
+        "apiKey": "sk-IISBrL6nrQLN4bfddvjlPlgAG5Lvc6qhd6Zriam8APqBTA9T",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "kimi-k2.7-code",
+            "name": "Kimi K2.7 Code",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 16384
+          },
+          {
+            "id": "kimi-k2.6",
+            "name": "Kimi K2.6",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 131072,
+            "maxTokens": 16384,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            }
+          }
+        ]
+      },
+      "zhipu": {
+        "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+        "apiKey": "039f4811848d4b678651f01c5b0714ce.5TPK13Xs68i1RrR9",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "glm-5.1",
+            "name": "GLM-5.1",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 16384,
+            "api": "openai-completions"
+          },
+          {
+            "id": "glm-5.2",
+            "name": "GLM-5.2",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 16384,
+            "api": "openai-completions"
+          }
+        ]
+      },
+      "qwen": {
+        "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "apiKey": "sk-ws-H.RYMIYRD.wixW.MEUCIFMp3PtQ8Knecf_2NFNJA4UfxrY7h2IzUbzJoqEMDfFzAiEAn8Z5rw5P015Vch1vxCl6k6R7jH5J3rzYws3dQ7KNXZo",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "qwen-vl-max",
+            "name": "Qwen VL Max",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 8192
+          },
+          {
+            "id": "qwen-vl-plus",
+            "name": "Qwen VL Plus",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 8192
+          },
+          {
+            "id": "qwen2.5-vl-72b-instruct",
+            "name": "Qwen 2.5 VL 72B",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 8192
+          },
+          {
+            "id": "qwen2.5-vl-7b-instruct",
+            "name": "Qwen 2.5 VL 7B",
+            "api": "openai-completions",
+            "reasoning": false,
+            "input": [
+              "text",
+              "image"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 8192
+          }
+        ]
+      },
+      "openai": {
+        "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "apiKey": "sk-ws-H.RYPRDPXQCRNVHFDHNDWBNX2HMNPW",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "text-embedding-v4",
+            "name": "Qwen Embedding V4",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 8192,
+            "maxTokens": 8192,
+            "api": "openai-completions"
+          }
+        ]
+      }
+    },
+    "mode": "merge"
+  },
+  "channels": {
+    "feishu": {
+      "enabled": true,
+      "streaming": true,
+      "domain": "feishu",
+      "groupPolicy": "open",
+      "dmPolicy": "open",
+      "allowFrom": [
+        "*"
+      ],
+      "appId": "cli_aa9368b5bcb89bcd",
+      "appSecret": "9fE9jj5ufOmllCYRuUdIQhsKRiMeJRw0",
+      "groupAllowFrom": [
+        "*"
+      ]
+    }
+  },
+  "plugins": {
+    "entries": {
+      "deepseek": {
+        "enabled": true
+      },
+      "browser": {
+        "enabled": true
+      },
+      "qwen": {
+        "enabled": true
+      },
+      "moonshot": {
+        "enabled": true
+      },
+      "qqbot": {
+        "enabled": false
+      },
+      "openclaw-lark": {
+        "enabled": true
+      },
+      "wecom-openclaw-plugin": {
+        "enabled": false
+      },
+      "dingtalk-connector": {
+        "enabled": false
+      },
+      "openclaw-plugin-yuanbao": {
+        "enabled": false
+      },
+      "openclaw-weixin": {
+        "enabled": false
+      },
+      "lightclawbot": {
+        "enabled": false
+      },
+      "memory-tencentdb": {
+        "enabled": true,
+        "hooks": {
+          "allowConversationAccess": true
+        }
+      },
+      "discord": {
+        "enabled": false
+      },
+      "slack": {
+        "enabled": false
+      },
+      "whatsapp": {
+        "enabled": false
+      }
+    }
+  },
+  "mcp": {
+    "servers": {
+      "code-review": {
+        "transport": "streamable-http",
+        "url": "http://43.156.46.187:9001/mcp",
+        "timeout": 60
+      },
+      "security-tools": {
+        "url": "http://43.156.46.187:3000/sse",
+        "transport": "sse",
+        "timeout": 120
+      }
+    }
+  }
+}
