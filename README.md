@@ -190,10 +190,11 @@ Agent 会自动按 SKILL.md 里的规范调用 MCP 工具。**开发者不需要
 |:----:|------|--------|------|
 | 9001 | code-review | 代码机械检查（15 种工具） | git-mcp `repo_sync` → `/opt/mcp/repos/<team>/` |
 | **3082** | **git-mcp** | **代码管理（push/pull/sync/审计）** | 无 |
+| **3000** | **security-tools** | **安全审计（46 工具，3 入口，SSE 传输）** | git-mcp → 代码路径 |
 | **3081** | **build-mcp** | **项目构建（npm/docker/mobile）** | git-mcp + code-review |
 | **3080** | **solana-mcp** | **Solana 合约（编译/部署/读链）** | Solana CLI |
 
-> 全部 4 个 MCP 服务已部署并运行。`repoBasePath` 已配置为 `/opt/mcp/repos`，与 code-review 路径一致。
+> 全部 5 个 MCP 服务已部署并运行。security-tools 使用 SSE 传输（`type: "sse"`），其余 HTTP。`repoBasePath` 已配置为 `/opt/mcp/repos`，与 code-review 路径一致。
 
 ### 如何验证连通
 

@@ -55,6 +55,11 @@ rm -rf /tmp/sftgroup-agent
         "type": "http",
         "url": "http://43.156.46.187:9001",
         "tools": ["review_all", "review_lint", "review_format", "review_types", "review_complexity", "review_deps"]
+      },
+      // 安全审计（46 个工具自动编排，3 个入口：contract_audit/centralized_audit/production_audit）
+      "security-tools": {
+        "type": "sse",
+        "url": "http://43.156.46.187:3000/sse"
       }
     }
   }
@@ -118,9 +123,10 @@ QA agent 接入后最显著的变化：**人工审查前先跑 code-review.revie
 |------|------|:---:|:---:|
 | git-mcp | 43.156.46.187 | 3082 | 18 |
 | code-review | 43.156.46.187 | 9001 | 6 |
+| security-tools | 43.156.46.187 | 3000 | 46 |
 | build-mcp | 43.156.46.187 | 3081 | 6 |
 
-> 全部无代理，HTTP 直连。systemd 管理，自动重启。
+> security-tools 使用 SSE 传输，其余 HTTP 直连。全部 systemd 管理，自动重启。
 
 ---
 
