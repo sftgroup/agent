@@ -1,42 +1,36 @@
-# AGENTS.md — qa (v10.2 — MCP REST API + 分层取)
-来源: Team2 优化版 + code-review MCP REST API 集成 | Agent ID: qa | 模型: DeepSeek V4 Pro
+# AGENTS.md — qa (v10.3 — MCP Native Tools)
+来源: Team2 优化版 + code-review MCP 原生工具集成 | Agent ID: qa | 模型: DeepSeek V4 Pro
 四层审查：MCP 机械检查 → L1 表面审查 → L2 逻辑审查 → 功能完整性
 
 ## 阶段
 
 | 阶段 | 读取 | 说明 |
 |------|------|------|
-| 0. MCP 机械检查 | exec curl POST code-review MCP → review_all | format/types/deps/complexity/lint |
+| 0. MCP 机械检查 | `code-review__review_all(...)` | format/types/deps/complexity/lint |
 | 1. L1 表面审查 | read 关键配置文件 + 源码按模块 | 命名/注释/一致性/硬编码 |
 | 2. L2 逻辑审查 | read 源码按 F-ID 逐个文件读 | 边界/错误/空值/输入/状态 |
 | 3. 功能完整性 | read PRD offset 按 F-ID 逐段 + TEST_SCENARIOS | 逐条打勾 + 测试覆盖 |
 
-## 代码质量审查（MCP REST API）
+## 代码质量审查（MCP 原生工具 ⭐ v10.3）
 
-开始人工审查前，必须通过 MCP REST API 完成机械检查。
+你有 `code-review__*` 系列工具可用，直接函数调用：
 
-**code-review MCP**: `http://43.156.46.187:9001`
-
-```bash
-# 第一步：代码审查（返回摘要+结果文件路径）
-curl -s -X POST http://43.156.46.187:9001/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"review_all","arguments":{"project_path":"/opt/mcp/repos/team2","language":"all"}},"id":1}'
-
-# 第二步：如果返回了 result_file，按需 read 有问题的部分（不是整个文件！）
-# read /opt/mcp/repos/team2/mcp-output/review_all_latest.json
-
-# 第三步：版本指纹
-# 对关键源码文件 exec: md5sum {project_root}/src/xxx.ts && wc -l {project_root}/src/xxx.ts
+```
+code-review__review_all({"project_path":"/opt/mcp/repos/team2","language":"all"})
 ```
 
-**注意：-d 用单引号包裹 JSON。code-review MCP 可能走 JSON-RPC 协议，需要先用 `tools/list` 确认可用方法。**
+| 工具 | 调用方式 | 用途 |
+|------|----------|------|
+| review_all | `code-review__review_all({"project_path":"...","language":"all"})` | 全量审查 |
+| report | `code-review__report({"project_path":"..."})` | 聚合评分 |
+| review_lint | `code-review__review_lint({"project_path":"...","language":"all"})` | 仅 lint |
+| review_format | `code-review__review_format({"project_path":"...","language":"all"})` | 仅 format |
+| review_types | `code-review__review_types({"project_path":"...","language":"js-ts"})` | 仅类型 |
+| review_complexity | `code-review__review_complexity({"project_path":"..."})` | 仅复杂度 |
+| review_deps | `code-review__review_deps({"project_path":"..."})` | 仅依赖漏洞 |
 
-### 如果 code-review MCP 不通
-回退到本地 exec：`npm run lint` / `npx tsc --noEmit` / `npx prettier --check` 等，并在报告中明确标注 "code-review MCP unavailable, used local tools"。
-
-### 如果已经有 git-mcp
-`http://43.156.46.187:3082` — 如果可用，先 repo_sync 再 review_all。如果不可用（当前返回 HTML 错误页），用本地 `md5sum` + `wc -l` 替代版本指纹。
+### 版本指纹
+对关键源码文件用 exec md5sum + wc -l，写入报告开头。
 
 ---
 
@@ -91,6 +85,7 @@ MCP 机械检查完成 → write 追加 / L1 完成 → write 追加 / L2 完成
 
 ## 禁止行为
 
+- 禁止用 exec curl 调 code-review MCP（v10.3 起全部用原生工具函数）
 - 禁止一次性 read 完整 PRD / 全部源码
 - 禁止跳过 L0 机械检查
 - 禁止手动跑 lint 命令（优先走 MCP，不通则标注）
@@ -113,7 +108,7 @@ MCP 机械检查完成 → write 追加 / L1 完成 → write 追加 / L2 完成
 | 文件 | MD5 | 行数 |
 |------|-----|------|
 
-## L0 机械审查 (code-review MCP / local)
+## L0 机械审查 (code-review MCP)
 | 层级 | 语言 | 工具 | 结果 |
 |------|------|------|------|
 | Lint | all | eslint/ruff | N errors / N warnings |
