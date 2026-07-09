@@ -48,9 +48,26 @@ export async function apiListRepos(input: { search?: string }) {
 export async function apiGetRepo(input: { name: string }) {
   const repo = getRepo(input.name);
   if (!repo) throw new Error(`Repo "${input.name}" not found. Use repo_list to see available repos.`);
+  const localExists = existsSync(join(repo.local_path, ".git"));
   const latest = getLatestTag(input.name);
   const tags = listTags(input.name);
-  return { repo, latestTag: latest?.tag ?? null, tags };
+
+  // Check sync status
+  let unsyncedCommits = 0;
+  if (localExists) {
+    try {
+      unsyncedCommits = parseInt(gitOptional(repo.local_path, "rev-list --count origin/master..HEAD") || "0");
+    } catch { unsyncedCommits = -1; }
+  }
+
+  return {
+    repo,
+    cloned: localExists,
+    latestTag: latest?.tag ?? null,
+    latestTagSha: latest?.commit_sha ?? null,
+    unsyncedCommits,
+    tags,
+  };
 }
 
 export async function apiCreateGithubRepo(input: { name: string; description?: string; private?: boolean }) {
@@ -58,7 +75,6 @@ export async function apiCreateGithubRepo(input: { name: string; description?: s
   const token = process.env.GIT_TOKEN ?? process.env.GITHUB_TOKEN;
   if (!token) throw new Error("GIT_TOKEN env var not set");
 
-  // Create repo via GitHub API
   const body = JSON.stringify({
     name: input.name,
     description: input.description ?? "",
@@ -88,7 +104,7 @@ export async function apiCreateGithubRepo(input: { name: string; description?: s
   return { repo, github_url: ghRepo.html_url };
 }
 
-// ─── Git Operations ───────────────────────────────────
+// ─── Clone (GitHub → MCP local) ───────────────────────
 
 export async function apiClone(input: { name: string; branch?: string }) {
   const repo = getRepo(input.name);
@@ -97,19 +113,23 @@ export async function apiClone(input: { name: string; branch?: string }) {
   const branch = input.branch ?? repo.default_branch;
 
   if (existsSync(join(localPath, ".git"))) {
-    // Already cloned — pull instead
+    // Already cloned — pull from GitHub to sync
     git(localPath, `checkout ${branch}`);
-    const out = git(localPath, "pull --rebase");
-    logAudit(input.name, "clone", { branch, commitSha: gitOptional(localPath, "rev-parse HEAD"), status: "ok", message: "already cloned, pulled" });
-    return { alreadyCloned: true, path: localPath, branch, message: out };
+    const out = git(localPath, "pull --rebase origin");
+    const sha = gitOptional(localPath, "rev-parse HEAD");
+    logAudit(input.name, "clone", { branch, commitSha: sha, status: "ok", message: "already cloned, pulled" });
+    return { alreadyCloned: true, path: localPath, branch, headSha: sha, message: out };
   }
 
   mkdirSync(localPath, { recursive: true });
   const url = gitTokenUrl(repo.github_url);
-  const out = git(localPath, `clone -b "${branch}" --single-branch "${url}" .`);
-  logAudit(input.name, "clone", { branch, commitSha: gitOptional(localPath, "rev-parse HEAD"), status: "ok", message: out });
-  return { path: localPath, branch, message: out };
+  git(localPath, `clone -b "${branch}" --single-branch "${url}" .`);
+  const sha = gitOptional(localPath, "rev-parse HEAD");
+  logAudit(input.name, "clone", { branch, commitSha: sha, status: "ok" });
+  return { path: localPath, branch, headSha: sha };
 }
+
+// ─── Pull (GitHub → MCP local) ────────────────────────
 
 export async function apiPull(input: { name: string; branch?: string }) {
   const repo = getRepo(input.name);
@@ -132,12 +152,14 @@ export async function apiPull(input: { name: string; branch?: string }) {
 
   git(repo.local_path, `checkout ${branch}`);
   const before = git(repo.local_path, "rev-parse HEAD");
-  const out = git(repo.local_path, "pull --rebase");
+  const out = git(repo.local_path, "pull --rebase origin");
   const after = git(repo.local_path, "rev-parse HEAD");
 
   logAudit(input.name, "pull", { branch, commitSha: after, message: out, status: "ok" });
   return { ok: true, branch, beforeSha: before, afterSha: after, message: out };
 }
+
+// ─── Push (agent → MCP local, INCREMENTAL) ────────────
 
 export async function apiPush(input: {
   name: string; message: string; branch?: string;
@@ -150,12 +172,7 @@ export async function apiPush(input: {
 
   if (!existsSync(join(localPath, ".git"))) throw new Error(`Not cloned. Run git_clone first.`);
 
-  // 1. Pull latest
-  try { git(localPath, "pull --rebase"); } catch {
-    return { ok: false, stage: "pull", error: "Failed to pull latest. Resolve merge conflicts first." };
-  }
-
-  // 2. Integrity check (unless skipped)
+  // 1. Integrity check (unless skipped)
   let checkResult = null;
   if (!input.skipChecks) {
     checkResult = await apiCheck({ name: input.name, branch });
@@ -168,25 +185,27 @@ export async function apiPush(input: {
     }
   }
 
-  // 3. Stage files
+  // 2. Stage files
   git(localPath, "add .");
   if (input.files) {
-    git(localPath, "reset HEAD"); // unstage all
+    git(localPath, "reset HEAD");
     for (const f of input.files) git(localPath, `add "${f}"`);
   }
 
-  // 4. Check if anything to commit
+  // 3. Check if anything to commit
   const status = gitOptional(localPath, "status --porcelain");
   if (!status) return { ok: false, error: "No changes to commit." };
 
-  // 5. Commit
+  // 4. Commit — MCP local only (incremental, never overwrites)
   git(localPath, `commit -m "${input.message.replace(/"/g, '\\"')}"`);
 
-  // 6. Push
   const commitSha = git(localPath, "rev-parse HEAD");
-  let pushCmd = `push origin ${branch}`;
-  if (input.force) pushCmd += " --force-with-lease";
-  const pushOut = git(localPath, pushCmd);
+
+  // 5. Check unsynced count
+  let unsyncedCount = 0;
+  try {
+    unsyncedCount = parseInt(gitOptional(localPath, "rev-list --count origin/master..HEAD") || "0");
+  } catch { unsyncedCount = -1; }
 
   logAudit(input.name, "push", {
     branch, commitSha,
@@ -195,11 +214,132 @@ export async function apiPush(input: {
     status: "ok",
   });
 
+  // Record sync state in DB
+  const db = await import("../db.js");
+  db.getDb().prepare(
+    "INSERT INTO sync_log (repo_id, action, commit_sha, message, status) VALUES (?, 'push', ?, ?, 'pending')"
+  ).run(
+    (db.getRepo(input.name) as any)?.id ?? 0,
+    commitSha,
+    input.message
+  );
+
   return {
-    ok: true, commitSha, branch,
+    ok: true, commitSha, branch, stored: true,
+    unsyncedCommits: unsyncedCount,
     checks: checkResult?.checks ?? null,
+    hint: unsyncedCount > 0
+      ? `WARNING: ${unsyncedCount} local commit(s) not synced to GitHub. Run git_sync when ready.`
+      : undefined,
+  };
+}
+
+// ─── Sync (MCP local → GitHub) ────────────────────────
+
+export async function apiSync(input: { name: string; branch?: string; tag?: string }) {
+  const repo = getRepo(input.name);
+  if (!repo) throw new Error(`Repo "${input.name}" not found`);
+  if (!existsSync(join(repo.local_path, ".git"))) throw new Error(`Not cloned.`);
+
+  const token = process.env.GIT_TOKEN ?? process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GIT_TOKEN not set — cannot sync to GitHub");
+
+  const branch = input.branch ?? repo.default_branch;
+  git(repo.local_path, `checkout ${branch}`);
+
+  // Count what we're about to push
+  const unsyncedCount = parseInt(gitOptional(repo.local_path, `rev-list --count origin/${branch}..HEAD`) || "0");
+  if (unsyncedCount === 0) {
+    return { ok: true, synced: 0, message: "Already in sync — nothing to push." };
+  }
+
+  // Show what will be pushed
+  const logSummary = git(repo.local_path, `log --oneline origin/${branch}..HEAD`);
+  const syncCommits = logSummary.split("\n").filter(Boolean).map(line => {
+    const [sha, ...msg] = line.split(" ");
+    return { sha, message: msg.join(" ") };
+  });
+
+  // Push to GitHub
+  const pushOut = git(repo.local_path, `push origin ${branch}`);
+
+  // Create tag if requested
+  let tagResult = null;
+  if (input.tag) {
+    git(repo.local_path, `tag -a "${input.tag}" -m "${input.tag}"`);
+    git(repo.local_path, `push origin "${input.tag}"`);
+    createTag(input.name, input.tag, syncCommits[syncCommits.length - 1]?.sha ?? "", input.tag, "api");
+    tagResult = { tag: input.tag };
+  }
+
+  // Update sync_log
+  const db = await import("../db.js");
+  const repoId = (db.getRepo(input.name) as any)?.id ?? 0;
+  for (const c of syncCommits) {
+    db.getDb().prepare(
+      "UPDATE sync_log SET status = 'synced', synced_at = datetime('now') WHERE commit_sha = ? AND status = 'pending'"
+    ).run(c.sha);
+  }
+
+  const headSha = git(repo.local_path, "rev-parse HEAD");
+  logAudit(input.name, "sync", { branch, commitSha: headSha, message: `Synced ${unsyncedCount} commits`, status: "ok" });
+
+  return {
+    ok: true, branch,
+    synced: syncCommits.length,
+    commits: syncCommits,
+    headSha,
+    tag: tagResult,
     message: pushOut,
   };
+}
+
+export async function apiSyncStatus(input: { name?: string }) {
+  if (input.name) {
+    const repo = getRepo(input.name);
+    if (!repo) throw new Error(`Repo "${input.name}" not found`);
+    if (!existsSync(join(repo.local_path, ".git"))) return { name: input.name, unsynced: 0, commits: [] };
+
+    const branch = repo.default_branch;
+    git(repo.local_path, `fetch origin 2>/dev/null || true`);
+    const count = parseInt(gitOptional(repo.local_path, `rev-list --count origin/${branch}..HEAD`) || "0");
+
+    let commits: { sha: string; message: string }[] = [];
+    if (count > 0) {
+      const log = git(repo.local_path, `log --oneline origin/${branch}..HEAD`);
+      commits = log.split("\n").filter(Boolean).map(line => {
+        const [sha, ...msg] = line.split(" ");
+        return { sha, message: msg.join(" ") };
+      });
+    }
+
+    return { name: input.name, unsynced: count, commits };
+  }
+
+  // All repos
+  const repos = listRepos();
+  const results: any[] = [];
+  for (const repo of repos) {
+    if (!existsSync(join(repo.local_path, ".git"))) continue;
+    try {
+      git(repo.local_path, "fetch origin 2>/dev/null || true");
+      const count = parseInt(gitOptional(repo.local_path, `rev-list --count origin/${repo.default_branch}..HEAD`) || "0");
+      if (count > 0) {
+        const log = git(repo.local_path, `log --oneline origin/${repo.default_branch}..HEAD`);
+        const commits = log.split("\n").filter(Boolean).map(line => {
+          const [sha, ...msg] = line.split(" ");
+          return { sha, message: msg.join(" ") };
+        });
+        results.push({ name: repo.name, unsynced: count, commits });
+      } else {
+        results.push({ name: repo.name, unsynced: 0, commits: [] });
+      }
+    } catch {
+      results.push({ name: repo.name, unsynced: -1, error: "fetch failed" });
+    }
+  }
+
+  return { repos: results, total: results.length };
 }
 
 // ─── Status ────────────────────────────────────────────
@@ -217,11 +357,19 @@ export async function apiStatus(input: { name: string }) {
   const unstaged = status.split("\n").filter(l => /^.[MDRC]/.test(l));
   const untracked = status.split("\n").filter(l => /^\?\?/.test(l));
 
+  // Unsynced check
+  let unsyncedCommits = 0;
+  try {
+    git(repo.local_path, "fetch origin 2>/dev/null || true");
+    unsyncedCommits = parseInt(gitOptional(repo.local_path, `rev-list --count origin/${branch}..HEAD`) || "0");
+  } catch { unsyncedCommits = -1; }
+
   return {
     repo: input.name, branch, commitSha,
     dirty: status.length > 0,
     staged: staged.length, unstaged: unstaged.length, untracked: untracked.length,
     files: status.split("\n").filter(Boolean).map(l => l.substring(3)).slice(0, 50),
+    unsyncedCommits,
   };
 }
 
@@ -275,7 +423,6 @@ export async function apiCheckout(input: { name: string; ref: string }) {
   if (!repo) throw new Error(`Repo "${input.name}" not found`);
   if (!existsSync(join(repo.local_path, ".git"))) throw new Error(`Not cloned.`);
 
-  // Check for dirty state
   const status = gitOptional(repo.local_path, "status --porcelain");
   if (status) return { ok: false, dirty: true, message: "Uncommitted changes. Commit or stash first." };
 
@@ -302,7 +449,6 @@ export async function apiCheck(input: { name: string; branch?: string }) {
   const results: Record<string, { passed: boolean; error?: string; detail?: string }> = {};
   let allPassed = true;
 
-  // Check 1: Check command (e.g. pnpm build or cargo check)
   if (guardConfig.checks?.checkCmd) {
     try {
       execSync(guardConfig.checks.checkCmd, { cwd: localPath, timeout: 180_000, maxBuffer: 5 * 1024 * 1024 });
@@ -313,7 +459,6 @@ export async function apiCheck(input: { name: string; branch?: string }) {
     }
   }
 
-  // Check 2: Lint
   if (guardConfig.checks?.lintCmd) {
     try {
       execSync(guardConfig.checks.lintCmd, { cwd: localPath, timeout: 120_000, maxBuffer: 5 * 1024 * 1024 });
@@ -324,7 +469,6 @@ export async function apiCheck(input: { name: string; branch?: string }) {
     }
   }
 
-  // Check 3: Test (optional)
   if (guardConfig.checks?.testCmd) {
     try {
       execSync(guardConfig.checks.testCmd, { cwd: localPath, timeout: 300_000, maxBuffer: 10 * 1024 * 1024 });
@@ -335,7 +479,6 @@ export async function apiCheck(input: { name: string; branch?: string }) {
     }
   }
 
-  // Check 4: Guard files — detect unexpected changes
   if (guardConfig.guardFiles && Object.keys(guardConfig.guardFiles).length > 0) {
     const guardIssues: string[] = [];
     const diffOut = gitOptional(localPath, "diff --name-only HEAD~1..HEAD");
@@ -362,7 +505,6 @@ export async function apiCheck(input: { name: string; branch?: string }) {
     if (guardIssues.length > 0) allPassed = false;
   }
 
-  // Check 5: Contract checks (Solana)
   if (guardConfig.contracts?.type === "solana" && guardConfig.contracts.programId) {
     const programIdPattern = guardConfig.contracts.programId;
     const declFiles = gitOptional(localPath, "grep -l declare_id || true").split("\n").filter(Boolean);

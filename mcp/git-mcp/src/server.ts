@@ -24,7 +24,8 @@ import {
   apiRegisterRepo, apiListRepos, apiGetRepo, apiCreateGithubRepo,
   apiClone, apiPull, apiPush, apiStatus,
   apiCreateTag, apiListTags,
-  apiLog, apiLogAudit, apiCheckout, apiCheck
+  apiLog, apiLogAudit, apiCheckout, apiCheck,
+  apiSync, apiSyncStatus
 } from "./tools/gitOps.js";
 
 const cfg = loadConfig();
@@ -115,6 +116,16 @@ const tools: Record<string, { handler: (input: any) => Promise<any>; description
     handler: apiCheck,
     description: "Run code integrity checks: compile, lint, test, guardFiles, contract verification.",
     schema: { name: "string (required)", branch: "string" },
+  },
+  git_sync: {
+    handler: apiSync,
+    description: "Push MCP-local commits to GitHub. Use after git_push confirms unsynced commits.",
+    schema: { name: "string (required)", branch: "string", tag: "string — create a version tag after sync" },
+  },
+  git_sync_status: {
+    handler: apiSyncStatus,
+    description: "Check which repos have unsynced local commits not yet pushed to GitHub.",
+    schema: { name: "string — specific repo, or omit for all repos" },
   },
 };
 

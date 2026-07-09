@@ -56,9 +56,21 @@ function initSchema(db: Database.Database) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS sync_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+      action TEXT NOT NULL DEFAULT 'push',
+      commit_sha TEXT NOT NULL,
+      message TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      synced_at TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_audit_repo ON audit_log(repo_id);
     CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
     CREATE INDEX IF NOT EXISTS idx_versions_repo ON versions(repo_id);
+    CREATE INDEX IF NOT EXISTS idx_sync_status ON sync_log(status);
   `);
 }
 
