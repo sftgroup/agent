@@ -127,3 +127,47 @@ Environment=GIT_TOKEN=ghp_xxxxxxxxxxxx
 ```
 
 然后重启：`sudo systemctl restart git-mcp`
+
+---
+
+## 已安装工具链
+
+| 工具 | 版本 | 路径 |
+|------|------|------|
+| Node.js | 22.23.1 | `/usr/bin/node` |
+| pnpm | 11.10.0 | `~/.npm-global/bin/pnpm` |
+| Git | 2.43 | `/usr/bin/git` |
+| Solana CLI | 2.3.3 | `~/.local/share/solana/install/active_release/solana-release/bin/solana` |
+| SBF rustc | 1.84.1-dev | `~/.cache/solana/v1.48/rust/bin/rustc` |
+| cargo build-sbf | 2.3.3 | `~/.cargo/bin/cargo build-sbf` |
+| Docker | 29.6.1 + buildx | `/usr/bin/docker` |
+| Flutter | 3.44.5 | `~/flutter/` |
+| Android SDK | 34 + tools 34.0.0 + platform-tools 37 | `~/android-sdk/` |
+| Java | OpenJDK 17 | `/usr/lib/jvm/java-17-openjdk-amd64/` |
+| Expo | CLI | `npx expo` |
+
+## systemd 环境变量
+
+### solana-mcp
+```
+PATH=~/.local/share/solana/install/active_release/solana-release/bin:~/.cargo/bin:~/.npm-global/bin:...
+```
+
+### build-mcp
+```
+PATH=~/.npm-global/bin:~/.cargo/bin:~/flutter/bin:~/android-sdk/cmdline-tools/latest/bin:~/android-sdk/platform-tools:...
+ANDROID_HOME=/home/ubuntu/android-sdk
+ANDROID_SDK_ROOT=/home/ubuntu/android-sdk
+JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+DOCKER_HOST=unix:///var/run/docker.sock
+```
+
+### git-mcp
+```
+PATH=~/.npm-global/bin:...
+# GIT_TOKEN 需要通过 sudo systemctl edit git-mcp 添加
+```
+
+## 磁盘
+
+178G 总量，当前使用 ~16G。
