@@ -65,6 +65,24 @@ const CHAINS: Record<string, ChainConfig> = {
     currency: "ETH",
     isTestnet: true,
   },
+  op: {
+    id: 10, name: "Optimism",
+    rpc: process.env.OP_RPC || "",
+    explorer: "https://optimistic.etherscan.io",
+    explorerApi: "https://api-optimistic.etherscan.io/api",
+    explorerApiKey: process.env.ETHERSCAN_API_KEY || "",
+    currency: "ETH",
+    isTestnet: false,
+  },
+  avax: {
+    id: 43114, name: "Avalanche",
+    rpc: process.env.AVAX_RPC || "",
+    explorer: "https://snowtrace.io",
+    explorerApi: "https://api.snowtrace.io/api",
+    explorerApiKey: process.env.ETHERSCAN_API_KEY || "",
+    currency: "AVAX",
+    isTestnet: false,
+  },
 };
 
 export function getChain(chain: string): ChainConfig {
