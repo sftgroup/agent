@@ -1,11 +1,16 @@
 import { existsSync, rmSync, readdirSync } from "fs";
 import { join } from "path";
 import { execSync } from "child_process";
-import { loadConfig, readHistory, appendHistory, HistoryEntry } from "../config.js";
+import {
+  loadConfig,
+  readHistory,
+  appendHistory,
+  HistoryEntry,
+} from "../config.js";
 
 export interface CleanInput {
-  olderThanHours?: number;  // delete builds older than N hours (default: 1)
-  buildId?: string;         // delete specific build
+  olderThanHours?: number; // delete builds older than N hours (default: 1)
+  buildId?: string; // delete specific build
   type?: "npm" | "docker" | "mobile";
 }
 
@@ -23,7 +28,7 @@ export async function buildClean(input: CleanInput): Promise<CleanResult> {
   // Delete specific build
   if (input.buildId) {
     const all = readHistory(500);
-    const found = all.find(e => e.id === input.buildId);
+    const found = all.find((e) => e.id === input.buildId);
     if (!found) return { cleaned: 0, freedBytes: 0, entries: [] };
 
     for (const prefix of ["npm-", "docker-", "mobile-"]) {
@@ -31,12 +36,17 @@ export async function buildClean(input: CleanInput): Promise<CleanResult> {
       if (existsSync(dir)) {
         try {
           const size = parseInt(
-            require("child_process").execSync(`du -sb "${dir}" | cut -f1`).toString().trim()
+            require("child_process")
+              .execSync(`du -sb "${dir}" | cut -f1`)
+              .toString()
+              .trim(),
           );
           rmSync(dir, { recursive: true, force: true });
           entries.push(dir);
           freedBytes += size;
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
     }
     return { cleaned: entries.length, freedBytes, entries };
@@ -45,24 +55,31 @@ export async function buildClean(input: CleanInput): Promise<CleanResult> {
   // Clean by age
   const olderThan = input.olderThanHours ?? 1;
   const cutoff = Date.now() - olderThan * 3600 * 1000;
-  const history = readHistory(500).filter(e => {
+  const history = readHistory(500).filter((e) => {
     if (input.type && e.type !== input.type) return false;
     const ts = new Date(e.timestamp).getTime();
     return ts < cutoff && (e.status === "ok" || e.status === "fail");
   });
 
   for (const entry of history) {
-    const prefix = entry.type === "npm" ? "npm-" : entry.type === "docker" ? "docker-" : "mobile-";
+    const prefix =
+      entry.type === "npm"
+        ? "npm-"
+        : entry.type === "docker"
+          ? "docker-"
+          : "mobile-";
     const dir = join(cfg.buildDir, `${prefix}${entry.id}`);
     if (existsSync(dir)) {
       try {
         const size = parseInt(
-          execSync(`du -sb "${dir}" | cut -f1`).toString().trim()
+          execSync(`du -sb "${dir}" | cut -f1`).toString().trim(),
         );
         rmSync(dir, { recursive: true, force: true });
         entries.push(dir);
         freedBytes += size;
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -95,12 +112,17 @@ export interface DiskStatusResult {
 
 export function buildDiskStatus(): DiskStatusResult {
   const cfg = loadConfig();
-  if (!existsSync(cfg.buildDir)) return { buildDir: cfg.buildDir, totalSizeBytes: 0, buildCount: 0 };
+  if (!existsSync(cfg.buildDir))
+    return { buildDir: cfg.buildDir, totalSizeBytes: 0, buildCount: 0 };
 
   let totalSize = 0;
   try {
-    totalSize = parseInt(execSync(`du -sb "${cfg.buildDir}" | cut -f1`).toString().trim());
-  } catch { /* ignore */ }
+    totalSize = parseInt(
+      execSync(`du -sb "${cfg.buildDir}" | cut -f1`).toString().trim(),
+    );
+  } catch {
+    /* ignore */
+  }
 
   const dirs = readdirSync(cfg.buildDir);
   const history = readHistory(100);

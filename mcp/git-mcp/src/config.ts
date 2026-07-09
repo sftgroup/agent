@@ -27,7 +27,8 @@ export function loadConfig(): Config {
     }
   }
   _cfg = {
-    port: 3082, host: "127.0.0.1",
+    port: 3082,
+    host: "127.0.0.1",
     repoBasePath: join(homedir(), "repos"),
     dbPath: join(homedir(), ".git-mcp", "data.db"),
     githubOrg: "sftgroup",

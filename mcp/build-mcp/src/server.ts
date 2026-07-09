@@ -27,11 +27,13 @@ app.use(express.json({ limit: "5mb" }));
 const tools = {
   build_npm: {
     handler: async (input: any) => buildNpm(input),
-    description: "Build frontend or Node.js backend project. Clone → install → build → return artifact dist/.",
+    description:
+      "Build frontend or Node.js backend project. Clone → install → build → return artifact dist/.",
     schema: {
       repoUrl: "string (required) - git clone URL",
       branch: "string - git branch (default: main)",
-      installCmd: "string - install command (default: pnpm install --frozen-lockfile)",
+      installCmd:
+        "string - install command (default: pnpm install --frozen-lockfile)",
       buildCmd: "string - build command (default: pnpm build)",
       buildDir: "string - subdirectory for monorepo (default: repo root)",
       nodeVersion: "string - node version (default: 22)",
@@ -40,7 +42,8 @@ const tools = {
   },
   build_docker: {
     handler: async (input: any) => buildDocker(input),
-    description: "Build and optionally push Docker image. Clone → docker build → docker push.",
+    description:
+      "Build and optionally push Docker image. Clone → docker build → docker push.",
     schema: {
       repoUrl: "string (required) - git clone URL",
       branch: "string - git branch (default: main)",
@@ -54,7 +57,8 @@ const tools = {
   },
   build_mobile: {
     handler: async (input: any) => buildMobile(input),
-    description: "Build mobile app: React Native (iOS/Android), Flutter, Expo. Returns artifact paths.",
+    description:
+      "Build mobile app: React Native (iOS/Android), Flutter, Expo. Returns artifact paths.",
     schema: {
       repoUrl: "string (required) - git clone URL",
       branch: "string - git branch (default: main)",
@@ -68,7 +72,8 @@ const tools = {
   },
   build_status: {
     handler: async (input: any) => buildStatus(input),
-    description: "Check build history and status. Filter by build ID or get recent N.",
+    description:
+      "Check build history and status. Filter by build ID or get recent N.",
     schema: {
       buildId: "string - specific build ID to query",
       limit: "number - recent N builds (default: 30)",
@@ -76,7 +81,8 @@ const tools = {
   },
   build_clean: {
     handler: async (input: any) => buildClean(input),
-    description: "Clean old build artifacts from workspace. By age (default: >1h) or specific build ID.",
+    description:
+      "Clean old build artifacts from workspace. By age (default: >1h) or specific build ID.",
     schema: {
       olderThanHours: "number - delete builds older than N hours (default: 1)",
       buildId: "string - delete specific build",
@@ -105,14 +111,22 @@ app.post("/tools/:name", async (req, res) => {
   const { name } = req.params;
   const tool = tools[name as keyof typeof tools];
   if (!tool) {
-    res.status(404).json({ error: `Unknown tool: ${name}`, availableTools: Object.keys(tools) });
+    res.status(404).json({
+      error: `Unknown tool: ${name}`,
+      availableTools: Object.keys(tools),
+    });
     return;
   }
 
   const start = Date.now();
   try {
     const result = await tool.handler(req.body ?? {});
-    res.json({ ok: true, tool: name, durationMs: Date.now() - start, ...result });
+    res.json({
+      ok: true,
+      tool: name,
+      durationMs: Date.now() - start,
+      ...result,
+    });
   } catch (e: any) {
     res.status(500).json({
       ok: false,
@@ -139,7 +153,9 @@ app.listen(cfg.port, cfg.host, () => {
   console.log(`   GET  /tools                   — list tools`);
   console.log(`   POST /tools/build_npm         — frontend / Node.js`);
   console.log(`   POST /tools/build_docker      — Docker image`);
-  console.log(`   POST /tools/build_mobile      — React Native / Flutter / Expo`);
+  console.log(
+    `   POST /tools/build_mobile      — React Native / Flutter / Expo`,
+  );
   console.log(`   POST /tools/build_status      — build history`);
   console.log(`   Build workspace: ${cfg.buildDir}`);
 });

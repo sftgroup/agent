@@ -90,8 +90,13 @@ export interface RepoRow {
 }
 
 export function registerRepo(repo: {
-  name: string; github_url: string; local_path: string;
-  default_branch?: string; description?: string; tags?: string; guard_config?: string;
+  name: string;
+  github_url: string;
+  local_path: string;
+  default_branch?: string;
+  description?: string;
+  tags?: string;
+  guard_config?: string;
 }): RepoRow {
   const db = getDb();
   const stmt = db.prepare(`
@@ -99,26 +104,37 @@ export function registerRepo(repo: {
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
-    repo.name, repo.github_url, repo.local_path,
-    repo.default_branch ?? "master", repo.description ?? "",
-    repo.tags ?? "", repo.guard_config ?? "{}"
+    repo.name,
+    repo.github_url,
+    repo.local_path,
+    repo.default_branch ?? "master",
+    repo.description ?? "",
+    repo.tags ?? "",
+    repo.guard_config ?? "{}",
   );
-  return db.prepare("SELECT * FROM repositories WHERE name = ?").get(repo.name) as RepoRow;
+  return db
+    .prepare("SELECT * FROM repositories WHERE name = ?")
+    .get(repo.name) as RepoRow;
 }
 
 export function listRepos(search?: string): RepoRow[] {
   const db = getDb();
   if (search) {
-    return db.prepare(
-      "SELECT * FROM repositories WHERE name LIKE ? OR description LIKE ? OR tags LIKE ? ORDER BY updated_at DESC"
-    ).all(`%${search}%`, `%${search}%`, `%${search}%`) as RepoRow[];
+    return db
+      .prepare(
+        "SELECT * FROM repositories WHERE name LIKE ? OR description LIKE ? OR tags LIKE ? ORDER BY updated_at DESC",
+      )
+      .all(`%${search}%`, `%${search}%`, `%${search}%`) as RepoRow[];
   }
-  return db.prepare("SELECT * FROM repositories ORDER BY updated_at DESC").all() as RepoRow[];
+  return db
+    .prepare("SELECT * FROM repositories ORDER BY updated_at DESC")
+    .all() as RepoRow[];
 }
 
 export function getRepo(name: string): RepoRow | undefined {
   const db = getDb();
-  return db.prepare("SELECT * FROM repositories WHERE name = ?").get(name) as RepoRow | undefined;
+  return db.prepare("SELECT * FROM repositories WHERE name = ?").get(name) as
+    RepoRow | undefined;
 }
 
 export function updateRepo(name: string, fields: Partial<RepoRow>) {
@@ -132,7 +148,9 @@ export function updateRepo(name: string, fields: Partial<RepoRow>) {
   }
   if (sets.length === 0) return;
   vals.push(name);
-  db.prepare(`UPDATE repositories SET ${sets.join(", ")}, updated_at = datetime('now') WHERE name = ?`).run(...vals);
+  db.prepare(
+    `UPDATE repositories SET ${sets.join(", ")}, updated_at = datetime('now') WHERE name = ?`,
+  ).run(...vals);
 }
 
 export function deleteRepo(name: string) {
@@ -143,64 +161,108 @@ export function deleteRepo(name: string) {
 // ─── Versions ──────────────────────────────────────────
 
 export interface VersionRow {
-  id: number; repo_id: number; tag: string; commit_sha: string;
-  description: string; created_by: string; created_at: string;
+  id: number;
+  repo_id: number;
+  tag: string;
+  commit_sha: string;
+  description: string;
+  created_by: string;
+  created_at: string;
 }
 
-export function createTag(repoName: string, tag: string, commitSha: string, description?: string, createdBy?: string) {
+export function createTag(
+  repoName: string,
+  tag: string,
+  commitSha: string,
+  description?: string,
+  createdBy?: string,
+) {
   const db = getDb();
-  const repo = db.prepare("SELECT id FROM repositories WHERE name = ?").get(repoName) as { id: number } | undefined;
+  const repo = db
+    .prepare("SELECT id FROM repositories WHERE name = ?")
+    .get(repoName) as { id: number } | undefined;
   if (!repo) throw new Error(`Repo not found: ${repoName}`);
   db.prepare(
-    "INSERT INTO versions (repo_id, tag, commit_sha, description, created_by) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO versions (repo_id, tag, commit_sha, description, created_by) VALUES (?, ?, ?, ?, ?)",
   ).run(repo.id, tag, commitSha, description ?? "", createdBy ?? "");
 }
 
 export function listTags(repoName: string): VersionRow[] {
   const db = getDb();
-  return db.prepare(
-    "SELECT v.* FROM versions v JOIN repositories r ON v.repo_id = r.id WHERE r.name = ? ORDER BY v.created_at DESC"
-  ).all(repoName) as VersionRow[];
+  return db
+    .prepare(
+      "SELECT v.* FROM versions v JOIN repositories r ON v.repo_id = r.id WHERE r.name = ? ORDER BY v.created_at DESC",
+    )
+    .all(repoName) as VersionRow[];
 }
 
 export function getLatestTag(repoName: string): VersionRow | undefined {
   const db = getDb();
-  return db.prepare(
-    "SELECT v.* FROM versions v JOIN repositories r ON v.repo_id = r.id WHERE r.name = ? ORDER BY v.created_at DESC LIMIT 1"
-  ).get(repoName) as VersionRow | undefined;
+  return db
+    .prepare(
+      "SELECT v.* FROM versions v JOIN repositories r ON v.repo_id = r.id WHERE r.name = ? ORDER BY v.created_at DESC LIMIT 1",
+    )
+    .get(repoName) as VersionRow | undefined;
 }
 
 // ─── Audit ─────────────────────────────────────────────
 
 export interface AuditRow {
-  id: number; repo_id: number; action: string; branch: string;
-  commit_sha: string; message: string; triggered_by: string;
-  checks_json: string; status: string; created_at: string;
+  id: number;
+  repo_id: number;
+  action: string;
+  branch: string;
+  commit_sha: string;
+  message: string;
+  triggered_by: string;
+  checks_json: string;
+  status: string;
+  created_at: string;
 }
 
-export function logAudit(repoName: string, action: string, details: {
-  branch?: string; commitSha?: string; message?: string;
-  triggeredBy?: string; checks?: any; status?: string;
-}) {
+export function logAudit(
+  repoName: string,
+  action: string,
+  details: {
+    branch?: string;
+    commitSha?: string;
+    message?: string;
+    triggeredBy?: string;
+    checks?: any;
+    status?: string;
+  },
+) {
   const db = getDb();
-  const repo = db.prepare("SELECT id FROM repositories WHERE name = ?").get(repoName) as { id: number } | undefined;
-  db.prepare(`
+  const repo = db
+    .prepare("SELECT id FROM repositories WHERE name = ?")
+    .get(repoName) as { id: number } | undefined;
+  db.prepare(
+    `
     INSERT INTO audit_log (repo_id, action, branch, commit_sha, message, triggered_by, checks_json, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    repo?.id ?? 0, action,
-    details.branch ?? "", details.commitSha ?? "", details.message ?? "",
-    details.triggeredBy ?? "", JSON.stringify(details.checks ?? {}),
-    details.status ?? "ok"
+  `,
+  ).run(
+    repo?.id ?? 0,
+    action,
+    details.branch ?? "",
+    details.commitSha ?? "",
+    details.message ?? "",
+    details.triggeredBy ?? "",
+    JSON.stringify(details.checks ?? {}),
+    details.status ?? "ok",
   );
 }
 
 export function listAudit(repoName?: string, limit = 50): AuditRow[] {
   const db = getDb();
   if (repoName) {
-    return db.prepare(
-      "SELECT a.* FROM audit_log a JOIN repositories r ON a.repo_id = r.id WHERE r.name = ? ORDER BY a.created_at DESC LIMIT ?"
-    ).all(repoName, limit) as AuditRow[];
+    return db
+      .prepare(
+        "SELECT a.* FROM audit_log a JOIN repositories r ON a.repo_id = r.id WHERE r.name = ? ORDER BY a.created_at DESC LIMIT ?",
+      )
+      .all(repoName, limit) as AuditRow[];
   }
-  return db.prepare("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?").all(limit) as AuditRow[];
+  return db
+    .prepare("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?")
+    .all(limit) as AuditRow[];
 }

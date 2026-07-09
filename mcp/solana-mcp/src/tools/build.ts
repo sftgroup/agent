@@ -4,10 +4,10 @@ import { resolve } from "path";
 import { appendHistory, resolveKeypair, resolveProject } from "../config.js";
 
 export interface BuildInput {
-  projectDir?: string;     // absolute path, or use project name
-  projectName?: string;    // key from config.projects
-  edition?: string;        // "2021" (default) or "2024"
-  options?: string;        // extra cargo build-sbf flags
+  projectDir?: string; // absolute path, or use project name
+  projectName?: string; // key from config.projects
+  edition?: string; // "2021" (default) or "2024"
+  options?: string; // extra cargo build-sbf flags
 }
 
 export interface BuildResult {
@@ -18,9 +18,11 @@ export interface BuildResult {
 }
 
 export async function build(input: BuildInput): Promise<BuildResult> {
-  const dir = input.projectDir ?? resolveProject(input.projectName ?? "default");
+  const dir =
+    input.projectDir ?? resolveProject(input.projectName ?? "default");
   const absDir = resolve(dir);
-  if (!existsSync(absDir)) throw new Error(`Project directory not found: ${absDir}`);
+  if (!existsSync(absDir))
+    throw new Error(`Project directory not found: ${absDir}`);
 
   const edition = input.edition ?? "2021";
   const options = input.options ?? "";
@@ -29,8 +31,10 @@ export async function build(input: BuildInput): Promise<BuildResult> {
   if (edition === "2024") {
     const sbfRustc = execSync(
       `find ~/.cache/solana -name rustc -path "*/bin/rustc" 2>/dev/null | head -1`,
-      { shell: "/bin/bash" }
-    ).toString().trim();
+      { shell: "/bin/bash" },
+    )
+      .toString()
+      .trim();
 
     if (sbfRustc) {
       const ver = execSync(`${sbfRustc} --version`).toString().trim();
@@ -38,7 +42,7 @@ export async function build(input: BuildInput): Promise<BuildResult> {
       if (match && parseFloat(match[1]) < 1.85) {
         throw new Error(
           `SBF rustc ${match[1]} does not support edition2024. ` +
-          `Use edition="2021" or swap platform-tools to v1.54+.`
+            `Use edition="2021" or swap platform-tools to v1.54+.`,
         );
       }
     }
@@ -47,12 +51,17 @@ export async function build(input: BuildInput): Promise<BuildResult> {
   const start = Date.now();
 
   // Clean + build
-  execSync("rm -rf target/deploy/*.so target/sbf 2>/dev/null; true", { cwd: absDir });
+  execSync("rm -rf target/deploy/*.so target/sbf 2>/dev/null; true", {
+    cwd: absDir,
+  });
   const cmd = `cargo build-sbf --sbf-out-dir target/deploy ${options}`;
   let output: string;
   try {
-    output = execSync(cmd, { cwd: absDir, env: { ...process.env, PATH: process.env.PATH }, timeout: 120_000 })
-      .toString();
+    output = execSync(cmd, {
+      cwd: absDir,
+      env: { ...process.env, PATH: process.env.PATH },
+      timeout: 120_000,
+    }).toString();
   } catch (e: any) {
     const stderr = e.stderr?.toString() ?? e.stdout?.toString() ?? e.message;
     appendHistory({
@@ -65,7 +74,13 @@ export async function build(input: BuildInput): Promise<BuildResult> {
   }
 
   // Find .so
-  const soFiles = execSync("ls -t target/deploy/*.so 2>/dev/null || true", { cwd: absDir }).toString().trim().split("\n").filter(Boolean);
+  const soFiles = execSync("ls -t target/deploy/*.so 2>/dev/null || true", {
+    cwd: absDir,
+  })
+    .toString()
+    .trim()
+    .split("\n")
+    .filter(Boolean);
   if (soFiles.length === 0) {
     throw new Error("Build produced no .so file in target/deploy/");
   }
@@ -75,13 +90,15 @@ export async function build(input: BuildInput): Promise<BuildResult> {
 
   // Extract warnings
   const warnPattern = /warning: .*/g;
-  const warnings = [...output.matchAll(warnPattern)].map(m => m[0]);
+  const warnings = [...output.matchAll(warnPattern)].map((m) => m[0]);
 
   const durationMs = Date.now() - start;
 
   // Check .so size
   if (sizeKB > 200) {
-    warnings.push(`SO file is ${sizeKB}KB (over 200KB limit). Add lto=true and codegen-units=1 to [profile.release].`);
+    warnings.push(
+      `SO file is ${sizeKB}KB (over 200KB limit). Add lto=true and codegen-units=1 to [profile.release].`,
+    );
   }
 
   appendHistory({

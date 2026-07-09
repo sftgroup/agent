@@ -7,12 +7,12 @@ import { loadConfig, appendHistory, HistoryEntry } from "../config.js";
 export interface BuildDockerInput {
   repoUrl: string;
   branch?: string;
-  dockerfile?: string;      // relative path, default: "Dockerfile"
-  imageName: string;         // "myregistry.com/name:tag"
+  dockerfile?: string; // relative path, default: "Dockerfile"
+  imageName: string; // "myregistry.com/name:tag"
   buildArgs?: Record<string, string>;
-  push?: boolean;            // default: true
-  registry?: string;         // key from config.registries
-  platform?: string;         // default: "linux/amd64"
+  push?: boolean; // default: true
+  registry?: string; // key from config.registries
+  platform?: string; // default: "linux/amd64"
 }
 
 export interface BuildDockerResult {
@@ -25,7 +25,9 @@ export interface BuildDockerResult {
   durationMs: number;
 }
 
-export async function buildDocker(input: BuildDockerInput): Promise<BuildDockerResult> {
+export async function buildDocker(
+  input: BuildDockerInput,
+): Promise<BuildDockerResult> {
   const cfg = loadConfig();
   const buildId = randomUUID().substring(0, 8);
   const workDir = join(cfg.buildDir, `docker-${buildId}`);
@@ -49,11 +51,16 @@ export async function buildDocker(input: BuildDockerInput): Promise<BuildDockerR
 
   const run = (cmd: string, timeoutSec = 600): string => {
     try {
-      const out = execSync(cmd, { cwd: workDir, timeout: timeoutSec * 1000, maxBuffer: 10 * 1024 * 1024 }).toString();
+      const out = execSync(cmd, {
+        cwd: workDir,
+        timeout: timeoutSec * 1000,
+        maxBuffer: 10 * 1024 * 1024,
+      }).toString();
       log += out;
       return out;
     } catch (e: any) {
-      const err = e.stderr?.toString() ?? e.stdout?.toString() ?? e.message ?? String(e);
+      const err =
+        e.stderr?.toString() ?? e.stdout?.toString() ?? e.message ?? String(e);
       log += err;
       throw new Error(err);
     }
@@ -64,20 +71,32 @@ export async function buildDocker(input: BuildDockerInput): Promise<BuildDockerR
     run(`git clone -b "${branch}" --single-branch "${input.repoUrl}" .`, 120);
 
     const dockerfile = join(workDir, input.dockerfile ?? "Dockerfile");
-    if (!existsSync(dockerfile)) throw new Error(`Dockerfile not found: ${dockerfile}`);
+    if (!existsSync(dockerfile))
+      throw new Error(`Dockerfile not found: ${dockerfile}`);
 
     // Build args
-    const args = Object.entries(input.buildArgs ?? {}).map(([k, v]) => `--build-arg ${k}=${v}`).join(" ");
+    const args = Object.entries(input.buildArgs ?? {})
+      .map(([k, v]) => `--build-arg ${k}=${v}`)
+      .join(" ");
     const platform = input.platform ? `--platform ${input.platform}` : "";
 
     // Build
-    run(`docker build ${platform} ${args} -t "${input.imageName}" -f "${dockerfile}" "${workDir}"`, 900);
+    run(
+      `docker build ${platform} ${args} -t "${input.imageName}" -f "${dockerfile}" "${workDir}"`,
+      900,
+    );
 
     // Extract image ID
     let imageId: string | undefined;
     try {
-      imageId = execSync(`docker inspect --format='{{.Id}}' "${input.imageName}"`).toString().trim();
-    } catch { /* ignore */ }
+      imageId = execSync(
+        `docker inspect --format='{{.Id}}' "${input.imageName}"`,
+      )
+        .toString()
+        .trim();
+    } catch {
+      /* ignore */
+    }
 
     let pushed = false;
     if (input.push !== false) {
@@ -89,7 +108,10 @@ export async function buildDocker(input: BuildDockerInput): Promise<BuildDockerR
           const regEnv = `REGISTRY_${input.registry.toUpperCase()}_TOKEN`;
           const token = process.env[regEnv];
           if (token) {
-            run(`echo "${token}" | docker login "${regUrl}" --username ignored --password-stdin`, 30);
+            run(
+              `echo "${token}" | docker login "${regUrl}" --username ignored --password-stdin`,
+              30,
+            );
           }
         }
       }

@@ -64,9 +64,12 @@ export function appendHistory(entry: HistoryEntry): void {
 export function readHistory(limit = 50, programId?: string): HistoryEntry[] {
   const cfg = loadConfig();
   if (!existsSync(cfg.historyPath!)) return [];
-  const lines = readFileSync(cfg.historyPath!, "utf-8").trim().split("\n").filter(Boolean);
-  let entries = lines.map(l => JSON.parse(l)) as HistoryEntry[];
-  if (programId) entries = entries.filter(e => e.programId === programId);
+  const lines = readFileSync(cfg.historyPath!, "utf-8")
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+  let entries = lines.map((l) => JSON.parse(l)) as HistoryEntry[];
+  if (programId) entries = entries.filter((e) => e.programId === programId);
   return entries.slice(-limit).reverse();
 }
 
@@ -75,7 +78,10 @@ export function readHistory(limit = 50, programId?: string): HistoryEntry[] {
 export function resolveKeypair(name: string): Uint8Array {
   const cfg = loadConfig();
   const kpPath = cfg.keypairs[name];
-  if (!kpPath) throw new Error(`Unknown keypair: ${name}. Available: ${Object.keys(cfg.keypairs).join(", ")}`);
+  if (!kpPath)
+    throw new Error(
+      `Unknown keypair: ${name}. Available: ${Object.keys(cfg.keypairs).join(", ")}`,
+    );
   const raw = readFileSync(kpPath, "utf-8");
   try {
     const arr = JSON.parse(raw);
@@ -88,6 +94,9 @@ export function resolveKeypair(name: string): Uint8Array {
 export function resolveProject(name: string): string {
   const cfg = loadConfig();
   const dir = cfg.projects[name];
-  if (!dir) throw new Error(`Unknown project: ${name}. Available: ${Object.keys(cfg.projects).join(", ")}`);
+  if (!dir)
+    throw new Error(
+      `Unknown project: ${name}. Available: ${Object.keys(cfg.projects).join(", ")}`,
+    );
   return dir;
 }

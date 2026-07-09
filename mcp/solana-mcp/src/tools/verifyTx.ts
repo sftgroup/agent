@@ -12,7 +12,7 @@ export interface VerifyTxResult {
   slot: number;
   blockTime?: number;
   fee?: number;
-  logs: string[];         // truncated to last 20 lines
+  logs: string[]; // truncated to last 20 lines
   err?: string;
 }
 
@@ -31,8 +31,10 @@ export async function verifyTx(input: VerifyTxInput): Promise<VerifyTxResult> {
   try {
     const confirmOut = execSync(
       `solana confirm "${input.signature}" --url "${network}" --output json 2>&1`,
-      { timeout: 30_000 }
-    ).toString().trim();
+      { timeout: 30_000 },
+    )
+      .toString()
+      .trim();
 
     try {
       const c = JSON.parse(confirmOut);
@@ -43,11 +45,17 @@ export async function verifyTx(input: VerifyTxInput): Promise<VerifyTxResult> {
       err = c.err ? JSON.stringify(c.err) : undefined;
     } catch {
       // text output
-      if (confirmOut.includes("Confirmed") || confirmOut.includes("Finalized")) {
+      if (
+        confirmOut.includes("Confirmed") ||
+        confirmOut.includes("Finalized")
+      ) {
         status = "confirmed";
       } else if (confirmOut.includes("Processed")) {
         status = "processed";
-      } else if (confirmOut.includes("Not found") || confirmOut.includes("Unable to confirm")) {
+      } else if (
+        confirmOut.includes("Not found") ||
+        confirmOut.includes("Unable to confirm")
+      ) {
         status = "not_found";
       }
     }
@@ -59,18 +67,30 @@ export async function verifyTx(input: VerifyTxInput): Promise<VerifyTxResult> {
   try {
     const txOut = execSync(
       `solana transaction "${input.signature}" --url "${network}" --output json 2>&1`,
-      { timeout: 30_000 }
-    ).toString().trim();
+      { timeout: 30_000 },
+    )
+      .toString()
+      .trim();
 
     try {
       const t = JSON.parse(txOut);
       logs = (t.meta?.logMessages ?? []).slice(-20);
     } catch {
       const lines = txOut.split("\n");
-      const logStart = lines.findIndex(l => l.includes("Log Messages"));
+      const logStart = lines.findIndex((l) => l.includes("Log Messages"));
       if (logStart >= 0) logs = lines.slice(logStart + 1).slice(-20);
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
-  return { signature: input.signature, status, slot, blockTime, fee, logs, err };
+  return {
+    signature: input.signature,
+    status,
+    slot,
+    blockTime,
+    fee,
+    logs,
+    err,
+  };
 }

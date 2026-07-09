@@ -1,7 +1,14 @@
 import { ethers } from "ethers";
 import { execSync } from "child_process";
 import { getChain, getGasPreset, resolveToken } from "./config.js";
-import { getNonce, incrementNonce, saveDeployment, saveTx, confirmTx, getDb } from "./store.js";
+import {
+  getNonce,
+  incrementNonce,
+  saveDeployment,
+  saveTx,
+  confirmTx,
+  getDb,
+} from "./store.js";
 import fs from "fs";
 import path from "path";
 
@@ -93,9 +100,11 @@ export async function evm_status(args: { chain: string; address?: string }) {
 
     // Check registry
     const db = getDb();
-    const contracts = db.prepare(
-      "SELECT name, address, tx_hash, deployed_at FROM deployments WHERE chain = ? AND deployer = ? ORDER BY deployed_at DESC LIMIT 5"
-    ).all(args.chain, args.address);
+    const contracts = db
+      .prepare(
+        "SELECT name, address, tx_hash, deployed_at FROM deployments WHERE chain = ? AND deployer = ? ORDER BY deployed_at DESC LIMIT 5",
+      )
+      .all(args.chain, args.address);
     if (contracts.length) result.contracts = contracts;
   }
 
@@ -110,7 +119,11 @@ export async function evm_call(args: {
   method: string;
   args?: any[];
 }) {
-  const contract = new ethers.Contract(args.address, args.abi || ["function " + args.method], getProvider(args.chain));
+  const contract = new ethers.Contract(
+    args.address,
+    args.abi || ["function " + args.method],
+    getProvider(args.chain),
+  );
   const parts = parseMethod(args.method);
   const result = await contract[parts.name](...(args.args || []));
   return { result };
@@ -152,8 +165,13 @@ export async function evm_send(args: {
   });
 
   saveTx({
-    chain: args.chain, tx_hash: tx.hash, nonce, deployer: wallet.address,
-    contract: args.address, method: args.method, status: "pending",
+    chain: args.chain,
+    tx_hash: tx.hash,
+    nonce,
+    deployer: wallet.address,
+    contract: args.address,
+    method: args.method,
+    status: "pending",
     created_at: new Date().toISOString(),
   });
 
@@ -181,20 +199,24 @@ export async function evm_deploy(args: {
 
   // Compile
   const compileResult = compileContract(args.project_dir, args.contract_name);
-  if (!compileResult.success) throw new Error(`Compile failed: ${compileResult.errors?.join("; ")}`);
+  if (!compileResult.success)
+    throw new Error(`Compile failed: ${compileResult.errors?.join("; ")}`);
 
   // Deploy
   const factory = new ethers.ContractFactory(
     compileResult.abi!,
     compileResult.bytecode!,
-    wallet
+    wallet,
   );
 
   const nonce = await wallet.getTransactionCount();
   const contract = await factory.deploy(...(args.constructor_args || []), {
     gasLimit: args.gas_limit || 3000000,
     maxFeePerGas: ethers.utils.parseUnits(String(gasPreset.maxFee), "gwei"),
-    maxPriorityFeePerGas: ethers.utils.parseUnits(String(gasPreset.priorityFee), "gwei"),
+    maxPriorityFeePerGas: ethers.utils.parseUnits(
+      String(gasPreset.priorityFee),
+      "gwei",
+    ),
     nonce,
   });
   await contract.deployTransaction.wait();
@@ -203,8 +225,11 @@ export async function evm_deploy(args: {
 
   // Save to registry
   saveDeployment({
-    chain: args.chain, name: args.contract_name, address: addr,
-    tx_hash: contract.deployTransaction.hash, deployer: wallet.address,
+    chain: args.chain,
+    name: args.contract_name,
+    address: addr,
+    tx_hash: contract.deployTransaction.hash,
+    deployer: wallet.address,
     constructor_args: JSON.stringify(args.constructor_args || []),
     bytecode_hash: compileResult.bytecode_hash,
     compiler_version: compileResult.compiler_version,
@@ -217,17 +242,30 @@ export async function evm_deploy(args: {
   let verified = false;
   if (args.verify !== false) {
     try {
-      await verifyContract(args.chain, addr, args.contract_name, args.constructor_args || [], args.project_dir);
+      await verifyContract(
+        args.chain,
+        addr,
+        args.contract_name,
+        args.constructor_args || [],
+        args.project_dir,
+      );
       verified = true;
-      getDb().prepare("UPDATE deployments SET verified = 1 WHERE address = ?").run(addr);
+      getDb()
+        .prepare("UPDATE deployments SET verified = 1 WHERE address = ?")
+        .run(addr);
     } catch (e: any) {
       console.warn(`Verify failed (non-fatal): ${e.message}`);
     }
   }
 
   saveTx({
-    chain: args.chain, tx_hash: contract.deployTransaction.hash, nonce,
-    deployer: wallet.address, contract: addr, method: "deploy", status: "pending",
+    chain: args.chain,
+    tx_hash: contract.deployTransaction.hash,
+    nonce,
+    deployer: wallet.address,
+    contract: addr,
+    method: "deploy",
+    status: "pending",
     created_at: new Date().toISOString(),
   });
 
@@ -251,8 +289,16 @@ export async function evm_verify(args: {
   project_dir: string;
 }) {
   const cfg = getChain(args.chain);
-  await verifyContract(args.chain, args.address, args.contract_name, args.constructor_args, args.project_dir);
-  getDb().prepare("UPDATE deployments SET verified = 1 WHERE address = ?").run(args.address);
+  await verifyContract(
+    args.chain,
+    args.address,
+    args.contract_name,
+    args.constructor_args,
+    args.project_dir,
+  );
+  getDb()
+    .prepare("UPDATE deployments SET verified = 1 WHERE address = ?")
+    .run(args.address);
 
   return {
     success: true,
@@ -270,7 +316,7 @@ export async function evm_logs(args: {
   to_block?: number | string;
 }) {
   const provider = getProvider(args.chain);
-  const addresses = args.address.split(",").map(a => a.trim());
+  const addresses = args.address.split(",").map((a) => a.trim());
 
   const filter: any = { address: addresses, topics: [args.topic0] };
   if (args.topic1) filter.topics.push(args.topic1);
@@ -278,11 +324,11 @@ export async function evm_logs(args: {
   const logs = await provider.getLogs({
     ...filter,
     fromBlock: args.from_block,
-    toBlock: args.to_block === "latest" ? "latest" : (args.to_block || "latest"),
+    toBlock: args.to_block === "latest" ? "latest" : args.to_block || "latest",
   });
 
   return {
-    logs: logs.map(l => ({
+    logs: logs.map((l) => ({
       address: l.address,
       topics: l.topics,
       data: l.data,
@@ -321,28 +367,51 @@ export async function evm_token(args: {
       const addr = args.owner || wallet.address;
       const bal = await token.balanceOf(addr);
       const symbol = await token.symbol();
-      return { token: symbol, address: addr, balance: ethers.utils.formatUnits(bal, decimals), raw: bal.toString() };
+      return {
+        token: symbol,
+        address: addr,
+        balance: ethers.utils.formatUnits(bal, decimals),
+        raw: bal.toString(),
+      };
     }
     case "allowance": {
-      if (!args.owner || !args.spender) throw new Error("owner and spender required");
+      if (!args.owner || !args.spender)
+        throw new Error("owner and spender required");
       const allowance = await token.allowance(args.owner, args.spender);
-      return { owner: args.owner, spender: args.spender, allowance: ethers.utils.formatUnits(allowance, decimals), raw: allowance.toString() };
+      return {
+        owner: args.owner,
+        spender: args.spender,
+        allowance: ethers.utils.formatUnits(allowance, decimals),
+        raw: allowance.toString(),
+      };
     }
     case "approve": {
-      if (!args.spender || !args.amount) throw new Error("spender and amount required");
+      if (!args.spender || !args.amount)
+        throw new Error("spender and amount required");
       const amountWei = ethers.utils.parseUnits(args.amount, decimals);
       const tx = await token.approve(args.spender, amountWei);
       await tx.wait();
       const cfg = getChain(args.chain);
-      return { tx_hash: tx.hash, explorer_url: `${cfg.explorer}/tx/${tx.hash}`, spender: args.spender, amount: args.amount };
+      return {
+        tx_hash: tx.hash,
+        explorer_url: `${cfg.explorer}/tx/${tx.hash}`,
+        spender: args.spender,
+        amount: args.amount,
+      };
     }
     case "transfer": {
-      if (!args.recipient || !args.amount) throw new Error("recipient and amount required");
+      if (!args.recipient || !args.amount)
+        throw new Error("recipient and amount required");
       const amountWei = ethers.utils.parseUnits(args.amount, decimals);
       const tx = await token.transfer(args.recipient, amountWei);
       await tx.wait();
       const cfg = getChain(args.chain);
-      return { tx_hash: tx.hash, explorer_url: `${cfg.explorer}/tx/${tx.hash}`, recipient: args.recipient, amount: args.amount };
+      return {
+        tx_hash: tx.hash,
+        explorer_url: `${cfg.explorer}/tx/${tx.hash}`,
+        recipient: args.recipient,
+        amount: args.amount,
+      };
     }
     default:
       throw new Error(`Unknown action: ${args.action}`);
@@ -350,7 +419,10 @@ export async function evm_token(args: {
 }
 
 // ─── evm_gas_preset ──────────────────────────────────
-export async function evm_gas_preset(args: { chain: string; priority?: "slow" | "normal" | "fast" }) {
+export async function evm_gas_preset(args: {
+  chain: string;
+  priority?: "slow" | "normal" | "fast";
+}) {
   const preset = getGasPreset(args.chain, args.priority || "normal");
   return {
     chain: args.chain,
@@ -376,7 +448,12 @@ function compileContract(projectDir: string, contractName: string): any {
     execSync("forge build", { cwd, stdio: "pipe", timeout: 120000 });
 
     // Read forge artifacts
-    const artifactPath = path.join(cwd, "out", `${contractName}.sol`, `${contractName}.json`);
+    const artifactPath = path.join(
+      cwd,
+      "out",
+      `${contractName}.sol`,
+      `${contractName}.json`,
+    );
     if (fs.existsSync(artifactPath)) {
       const artifact = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
       return {
@@ -390,7 +467,13 @@ function compileContract(projectDir: string, contractName: string): any {
     throw new Error("Forge artifact not found");
   } catch (e: any) {
     // Fallback to hardhat-style artifact lookup
-    const hhPath = path.join(projectDir, "artifacts", "contracts", `${contractName}.sol`, `${contractName}.json`);
+    const hhPath = path.join(
+      projectDir,
+      "artifacts",
+      "contracts",
+      `${contractName}.sol`,
+      `${contractName}.json`,
+    );
     if (fs.existsSync(hhPath)) {
       const artifact = JSON.parse(fs.readFileSync(hhPath, "utf8"));
       return {
@@ -405,7 +488,13 @@ function compileContract(projectDir: string, contractName: string): any {
   }
 }
 
-async function verifyContract(chain: string, address: string, contractName: string, constructorArgs: any[], projectDir: string) {
+async function verifyContract(
+  chain: string,
+  address: string,
+  contractName: string,
+  constructorArgs: any[],
+  projectDir: string,
+) {
   const cfg = getChain(chain);
   const apiUrl = cfg.explorerApi;
   const apiKey = cfg.explorerApiKey;
@@ -413,21 +502,29 @@ async function verifyContract(chain: string, address: string, contractName: stri
   // Encode constructor args
   const encoded = ethers.utils.defaultAbiCoder.encode(
     constructorArgs.map(() => "address"), // simplified
-    constructorArgs
+    constructorArgs,
   );
 
   // Flatten source
   let flatSrc = "";
   try {
-    flatSrc = execSync(`cd ${projectDir} && forge flatten src/${contractName}.sol 2>/dev/null`, {
-      encoding: "utf8", timeout: 30000,
-    });
+    flatSrc = execSync(
+      `cd ${projectDir} && forge flatten src/${contractName}.sol 2>/dev/null`,
+      {
+        encoding: "utf8",
+        timeout: 30000,
+      },
+    );
   } catch {
     // If flatten fails, try hardhat
     try {
-      flatSrc = execSync(`cd ${projectDir} && npx hardhat flatten src/${contractName}.sol 2>/dev/null`, {
-        encoding: "utf8", timeout: 30000,
-      });
+      flatSrc = execSync(
+        `cd ${projectDir} && npx hardhat flatten src/${contractName}.sol 2>/dev/null`,
+        {
+          encoding: "utf8",
+          timeout: 30000,
+        },
+      );
     } catch {
       throw new Error("Cannot flatten source for verification");
     }

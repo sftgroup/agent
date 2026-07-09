@@ -77,7 +77,9 @@ export function getNonce(chain: string, deployer: string): number {
 
 export function setNonce(chain: string, deployer: string, nonce: number) {
   getDb()
-    .prepare("INSERT OR REPLACE INTO nonces (chain, deployer, next_nonce, updated_at) VALUES (?, ?, ?, ?)")
+    .prepare(
+      "INSERT OR REPLACE INTO nonces (chain, deployer, next_nonce, updated_at) VALUES (?, ?, ?, ?)",
+    )
     .run(chain, deployer, nonce, new Date().toISOString());
 }
 
@@ -109,15 +111,27 @@ export interface Deployment {
 }
 
 export function saveDeployment(d: Deployment) {
-  getDb().prepare(`
+  getDb()
+    .prepare(
+      `
     INSERT INTO deployments (chain, name, address, tx_hash, deployer, constructor_args, abi_hash, bytecode_hash, compiler_version, deployed_at, verified, tags)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    d.chain, d.name, d.address, d.tx_hash, d.deployer,
-    d.constructor_args ?? null, d.abi_hash ?? null, d.bytecode_hash ?? null,
-    d.compiler_version ?? null, d.deployed_at, d.verified,
-    JSON.stringify(d.tags)
-  );
+  `,
+    )
+    .run(
+      d.chain,
+      d.name,
+      d.address,
+      d.tx_hash,
+      d.deployer,
+      d.constructor_args ?? null,
+      d.abi_hash ?? null,
+      d.bytecode_hash ?? null,
+      d.compiler_version ?? null,
+      d.deployed_at,
+      d.verified,
+      JSON.stringify(d.tags),
+    );
 }
 
 export function getDeployments(filter: {
@@ -128,15 +142,27 @@ export function getDeployments(filter: {
 }): Deployment[] {
   let sql = "SELECT * FROM deployments WHERE 1=1";
   const params: any[] = [];
-  if (filter.chain) { sql += " AND chain = ?"; params.push(filter.chain); }
-  if (filter.name)  { sql += " AND name = ?";  params.push(filter.name); }
-  if (filter.address) { sql += " AND address = ?"; params.push(filter.address); }
-  if (filter.tag) { sql += " AND tags LIKE ?"; params.push(`%${filter.tag}%`); }
+  if (filter.chain) {
+    sql += " AND chain = ?";
+    params.push(filter.chain);
+  }
+  if (filter.name) {
+    sql += " AND name = ?";
+    params.push(filter.name);
+  }
+  if (filter.address) {
+    sql += " AND address = ?";
+    params.push(filter.address);
+  }
+  if (filter.tag) {
+    sql += " AND tags LIKE ?";
+    params.push(`%${filter.tag}%`);
+  }
   sql += " ORDER BY deployed_at DESC LIMIT 100";
 
   const d = getDb();
   const rows = d.prepare(sql).all(...params) as any[];
-  return rows.map(r => ({ ...r, tags: JSON.parse(r.tags || "[]") }));
+  return rows.map((r) => ({ ...r, tags: JSON.parse(r.tags || "[]") }));
 }
 
 // --- Tx queue ---
@@ -156,26 +182,45 @@ export interface TxRecord {
 }
 
 export function saveTx(tx: TxRecord) {
-  getDb().prepare(`
+  getDb()
+    .prepare(
+      `
     INSERT INTO tx_queue (chain, tx_hash, nonce, deployer, contract, method, status, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(tx.chain, tx.tx_hash, tx.nonce, tx.deployer, tx.contract ?? null, tx.method ?? null, tx.status, tx.created_at);
+  `,
+    )
+    .run(
+      tx.chain,
+      tx.tx_hash,
+      tx.nonce,
+      tx.deployer,
+      tx.contract ?? null,
+      tx.method ?? null,
+      tx.status,
+      tx.created_at,
+    );
 }
 
 export function confirmTx(tx_hash: string) {
-  getDb().prepare(
-    "UPDATE tx_queue SET status = 'confirmed', confirmed_at = ? WHERE tx_hash = ?"
-  ).run(new Date().toISOString(), tx_hash);
+  getDb()
+    .prepare(
+      "UPDATE tx_queue SET status = 'confirmed', confirmed_at = ? WHERE tx_hash = ?",
+    )
+    .run(new Date().toISOString(), tx_hash);
 }
 
 export function replaceTx(oldTxHash: string, newTxHash: string) {
-  getDb().prepare(
-    "UPDATE tx_queue SET status = 'failed', replaced_by = ? WHERE tx_hash = ?"
-  ).run(newTxHash, oldTxHash);
+  getDb()
+    .prepare(
+      "UPDATE tx_queue SET status = 'failed', replaced_by = ? WHERE tx_hash = ?",
+    )
+    .run(newTxHash, oldTxHash);
 }
 
 export function getPendingTx(chain: string, deployer: string): TxRecord[] {
-  return getDb().prepare(
-    "SELECT * FROM tx_queue WHERE chain = ? AND deployer = ? AND status = 'pending' ORDER BY nonce ASC"
-  ).all(chain, deployer) as TxRecord[];
+  return getDb()
+    .prepare(
+      "SELECT * FROM tx_queue WHERE chain = ? AND deployer = ? AND status = 'pending' ORDER BY nonce ASC",
+    )
+    .all(chain, deployer) as TxRecord[];
 }

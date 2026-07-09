@@ -1,14 +1,21 @@
-import { readFileSync, existsSync, mkdirSync, writeFileSync, appendFileSync } from "fs";
+import {
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  appendFileSync,
+} from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
 export interface Config {
   port: number;
   host: string;
-  buildDir: string;          // temp build workspace
-  maxBuildTimeSec: number;   // timeout
+  buildDir: string; // temp build workspace
+  maxBuildTimeSec: number; // timeout
   historyPath: string;
-  registries: {              // docker registries
+  registries: {
+    // docker registries
     dockerhub?: string;
     [key: string]: string | undefined;
   };
@@ -66,6 +73,12 @@ export function appendHistory(entry: HistoryEntry): void {
 export function readHistory(limit = 50): HistoryEntry[] {
   const cfg = loadConfig();
   if (!existsSync(cfg.historyPath)) return [];
-  const lines = readFileSync(cfg.historyPath, "utf-8").trim().split("\n").filter(Boolean);
-  return lines.map(l => JSON.parse(l)).slice(-limit).reverse();
+  const lines = readFileSync(cfg.historyPath, "utf-8")
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+  return lines
+    .map((l) => JSON.parse(l))
+    .slice(-limit)
+    .reverse();
 }

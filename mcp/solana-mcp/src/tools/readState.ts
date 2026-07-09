@@ -4,7 +4,7 @@ import { PublicKey } from "@solana/web3.js";
 
 export interface ReadStateInput {
   programId: string;
-  seed?: string;    // default "state"
+  seed?: string; // default "state"
   network?: string;
 }
 
@@ -20,7 +20,9 @@ export interface ReadStateResult {
   dataHex: string;
 }
 
-export async function readState(input: ReadStateInput): Promise<ReadStateResult> {
+export async function readState(
+  input: ReadStateInput,
+): Promise<ReadStateResult> {
   const cfg = loadConfig();
   const network = input.network ?? cfg.rpcUrl;
 
@@ -37,8 +39,10 @@ export async function readState(input: ReadStateInput): Promise<ReadStateResult>
   let parsed: any;
   try {
     const info = execSync(
-      `solana account "${pdaStr}" --url "${network}" --output json 2>&1`
-    ).toString().trim();
+      `solana account "${pdaStr}" --url "${network}" --output json 2>&1`,
+    )
+      .toString()
+      .trim();
     parsed = JSON.parse(info);
   } catch {
     return {
@@ -55,9 +59,12 @@ export async function readState(input: ReadStateInput): Promise<ReadStateResult>
 
   // Get owner name
   let ownerName: string | undefined;
-  if (parsed.owner === "BPFLoaderUpgradeab1e1111111111111111111111") ownerName = "BPF Upgradeable Loader";
-  else if (parsed.owner === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") ownerName = "SPL Token";
-  else if (parsed.owner === "11111111111111111111111111111111") ownerName = "System Program";
+  if (parsed.owner === "BPFLoaderUpgradeab1e1111111111111111111111")
+    ownerName = "BPF Upgradeable Loader";
+  else if (parsed.owner === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+    ownerName = "SPL Token";
+  else if (parsed.owner === "11111111111111111111111111111111")
+    ownerName = "System Program";
 
   return {
     pda: pdaStr,

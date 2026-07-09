@@ -20,6 +20,7 @@ import subprocess
 import os
 import sys
 import logging
+from typing import Optional
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 log = logging.getLogger("code-review-mcp")
@@ -50,7 +51,7 @@ def find_files(project_path: str, extensions: list[str]) -> list[str]:
     return files
 
 
-def run(cmd: list[str], cwd: str = None, timeout: int = 120) -> tuple[int, str, str]:
+def run(cmd: list[str], cwd: Optional[str] = None, timeout: int = 120) -> tuple[int, str, str]:
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd)
         return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
@@ -118,8 +119,10 @@ def review_format(project_path: str, language: str) -> dict:
         results.append({"tool": "forge fmt", "language": "solidity", "ok": rc == 0, "output": (out + err)[:500], "severity": "P1" if rc != 0 else "P0"})
 
     if language in ("js-ts", "all"):
-        rc, out, err = run(["npx", "prettier", "--check", f"{project_path}/**/*.{{ts,tsx,js,jsx}}"], timeout=60)
-        results.append({"tool": "prettier", "language": "js-ts", "ok": rc == 0, "output": (out + err)[:500], "severity": "P1" if rc != 0 else "P0"})
+        ts_files = find_files(project_path, ['.ts', '.tsx', '.js', '.jsx'])
+        if ts_files:
+            rc, out, err = run(["npx", "prettier", "--check"] + ts_files, timeout=60)
+            results.append({"tool": "prettier", "language": "js-ts", "ok": rc == 0, "output": (out + err)[:500], "severity": "P1" if rc != 0 else "P0"})
 
     if language in ("python", "all"):
         py_files = find_files(project_path, ['.py'])
