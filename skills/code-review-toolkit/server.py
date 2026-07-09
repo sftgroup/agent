@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Code Review MCP Server v3.3.1 — local filesystem mode + REST API + aggregated report
+Code Review MCP Server v4.0.0 — local filesystem mode + REST API + aggregated report
 Deploy on central MCP server. All team code lives on this server (git-managed).
 Review runs locally over /opt/mcp/repos/<team>/.
 
@@ -375,13 +375,13 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/health":
-            self._json(200, {"status": "ok", "version": "3.3.1", "mode": "local"})
+            self._json(200, {"status": "ok", "version": "4.0.0", "mode": "local"})
         elif parsed.path == "/api/tools":
             tools_list = [{"name": n, "description": s["description"]} for n, s in TOOLS.items()]
             self._json(200, {"tools": tools_list})
         elif parsed.path == "/api/languages":
             self._json(200, {"languages": ["solidity", "js-ts", "python", "shell", "all"]})
-        elif parsed.path == "/mcp":
+        elif parsed.path == "/" or parsed.path == "/mcp":
             self._json(405, {"error": "use POST for MCP"})
         else:
             self._json(404, {"error": "not found"})
@@ -419,8 +419,8 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
             self._json(200, report)
             return
 
-        # --- MCP JSON-RPC routes ---
-        if parsed.path != "/mcp":
+        # --- MCP JSON-RPC routes (POST / or /mcp) ---
+        if parsed.path not in ("/", "/mcp"):
             self._json(404, {"error": "not found"})
             return
 
@@ -433,7 +433,7 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
                 "result": {
                     "protocolVersion": "2025-06-18",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "code-review-mcp", "version": "3.3.1"}
+                    "serverInfo": {"name": "code-review-mcp", "version": "4.0.0"}
                 }
             })
         elif method == "tools/list":
