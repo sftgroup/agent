@@ -58,7 +58,8 @@ skills/openclaw-instance-doctor/
 ├── SKILL.md                        ← 本文件
 ├── references/
 │   ├── baseline.md                 ← 配置基准卡（15 项）
-│   └── onboarding-guide.md         ← 新机接入指南
+│   ├── onboarding-guide.md         ← 新机接入指南
+│   └── mcp-deployment-guide.md     ← MCP 部署规范（端口、目录、systemd）
 └── scripts/
     ├── diagnose.sh                 ← 诊断（8 维 + 缓存链评分）
     ├── fix-config.sh               ← 一键修复（11 项检查）

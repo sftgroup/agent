@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """
-Code Review MCP Server — HTTP (Streamable HTTP)
-Deploy on central server. All OpenClaw instances call this via MCP tool.
+Agent Review MCP Server — SSH proxy mode
+Deploy on central MCP server (43.156.46.187). All OpenClaw instances call via HTTP.
+MCP server SSH-es to target machine to run linters locally.
 
 Tools:
-  - review_lint(language, project_path)     → lint results per language
-  - review_format(language, project_path)   → format check results
-  - review_types(language, project_path)    → type check results
-  - review_complexity(language, project_path) → complexity report
-  - review_deps(project_path)               → dependency audit
-  - review_all(language, project_path)      → full suite
+  - review_lint(host, project_path, language)
+  - review_format(host, project_path, language)
+  - review_types(host, project_path, language)
+  - review_complexity(host, project_path)
+  - review_deps(host, project_path)
+  - review_all(host, project_path, language)
+
+Architecture:
+  teamN ──tool call──→ MCP server ──SSH──→ target machine ──run linter──→ return result
 """
 
 import json
@@ -20,222 +24,125 @@ import logging
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
-log = logging.getLogger("code-review-mcp")
+log = logging.getLogger("agent-review-mcp")
 
-# --- Tool Implementations ---
-
-def find_files(project_path: str, extensions: list[str]) -> list[str]:
-    """Find files with given extensions in project, excluding deps."""
-    files = []
-    exclude_dirs = {'node_modules', 'lib', 'dist', 'build', '.git', 'venv', '.venv', '__pycache__', 'forge-std', 'openzeppelin'}
-    for root, dirs, filenames in os.walk(project_path):
-        dirs[:] = [d for d in dirs if d not in exclude_dirs]
-        for f in filenames:
-            if any(f.endswith(ext) for ext in extensions):
-                files.append(os.path.join(root, f))
-    return files
+SSH_USER = "ubuntu"
+SSH_PASS = "Asdf1234!"
 
 
-def lint_solidity(project_path: str) -> dict:
-    files = find_files(project_path, ['.sol'])
-    if not files:
-        return {"found": False, "issues": []}
-
-    # solhint
-    cfg = Path(__file__).parent / "configs" / ".solhint.json"
-    results = []
-    if cfg.exists():
-        try:
-            proc = subprocess.run(
-                ["solhint"] + files,
-                capture_output=True, text=True, timeout=60,
-                env={**os.environ, "PATH": os.environ.get("PATH", "")}
-            )
-            for line in proc.stdout.strip().split("\n"):
-                if line.strip():
-                    results.append({"tool": "solhint", "file": "", "line": 0, "message": line, "severity": "P1"})
-        except FileNotFoundError:
-            results.append({"tool": "solhint", "file": "", "line": 0, "message": "solhint not installed", "severity": "P2"})
-    else:
-        results.append({"tool": "solhint", "file": "", "line": 0, "message": "no config", "severity": "P2"})
-
-    # forge fmt
-    try:
-        proc = subprocess.run(
-            ["forge", "fmt", "--check"], cwd=project_path,
-            capture_output=True, text=True, timeout=30
-        )
-        if proc.returncode != 0:
-            results.append({"tool": "forge fmt", "file": "", "line": 0, "message": proc.stdout.strip() or "format issues found", "severity": "P1"})
-    except FileNotFoundError:
-        results.append({"tool": "forge fmt", "file": "", "line": 0, "message": "forge not installed", "severity": "P2"})
-
-    return {"found": True, "fileCount": len(files), "issues": results}
+def ssh_exec(host: str, cmd: str, timeout: int = 120) -> tuple[int, str, str]:
+    """Execute command on target host via SSH."""
+    ssh_cmd = [
+        "sshpass", "-p", SSH_PASS,
+        "ssh", "-o", "StrictHostKeyChecking=no",
+        "-o", "ConnectTimeout=10",
+        f"{SSH_USER}@{host}",
+        cmd
+    ]
+    proc = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=timeout)
+    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
 
-def lint_typescript(project_path: str) -> dict:
-    extensions = ['.ts', '.tsx', '.js', '.jsx']
-    files = find_files(project_path, extensions)
-    if not files:
-        return {"found": False, "issues": []}
-
+def remote_lint(host: str, project_path: str, language: str) -> dict:
+    """Run lint on target host via SSH."""
     results = []
 
-    # eslint
-    cfg = Path(__file__).parent / "configs" / ".eslintrc.json"
-    try:
-        cmd = ["eslint", "--format", "compact"] + files
-        subprocess.run(["eslint", "--version"], capture_output=True, timeout=5)
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        for line in proc.stdout.strip().split("\n"):
-            if line.strip():
-                results.append({"tool": "eslint", "file": "", "line": 0, "message": line, "severity": "P1"})
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        results.append({"tool": "eslint", "file": "", "line": 0, "message": "eslint not available", "severity": "P2"})
+    if language in ("solidity", "all"):
+        cmd = f'cd {project_path} && sol_files=$(find . -name "*.sol" -not -path "*/node_modules/*" -not -path "*/lib/*" -not -path "*/.git/*" 2>/dev/null) && if [ -n "$sol_files" ]; then solhint $sol_files 2>&1; fi'
+        rc, out, err = ssh_exec(host, cmd)
+        for line in (out + "\n" + err).split("\n"):
+            line = line.strip()
+            if line and ("error" in line.lower() or "warning" in line.lower() or ":" in line[:20]):
+                results.append({"tool": "solhint", "host": host, "file": "", "line": 0, "message": line, "severity": "P1"})
 
-    # tsc --noEmit
-    tsconfig = os.path.join(project_path, "tsconfig.json")
-    if os.path.exists(tsconfig):
+        # forge fmt
+        code, out, err = ssh_exec(host, f"cd {project_path} && forge fmt --check 2>&1", timeout=30)
+        if code != 0:
+            results.append({"tool": "forge fmt", "host": host, "file": "", "line": 0, "message": (out or "format issues found")[:500], "severity": "P1"})
+
+    if language in ("js-ts", "all"):
+        find_cmd = f'cd {project_path} && find . \\( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" \\) -not -path "*/node_modules/*" -not -path "*/dist/*" -not -path "*/build/*" -not -path "*/.git/*" 2>/dev/null'
+        rc, files, _ = ssh_exec(host, find_cmd)
+        if files:
+            # eslint
+            code, out, err = ssh_exec(host, f"cd {project_path} && npx eslint --format compact {files} 2>&1", timeout=120)
+            for line in (out + "\n" + err).split("\n"):
+                line = line.strip()
+                if line:
+                    results.append({"tool": "eslint", "host": host, "file": "", "line": 0, "message": line, "severity": "P1"})
+
+    if language in ("python", "all"):
+        find_cmd = f'cd {project_path} && find . -name "*.py" -not -path "*/.venv/*" -not -path "*/venv/*" -not -path "*/__pycache__/*" -not -path "*/.git/*" 2>/dev/null'
+        rc, files, _ = ssh_exec(host, find_cmd)
+        if files:
+            code, out, err = ssh_exec(host, f"cd {project_path} && ruff check {files} 2>&1", timeout=60)
+            for line in (out + "\n" + err).split("\n"):
+                line = line.strip()
+                if line:
+                    results.append({"tool": "ruff", "host": host, "file": "", "line": 0, "message": line, "severity": "P1"})
+
+    return {"host": host, "project": project_path, "language": language, "issueCount": len(results), "issues": results}
+
+
+def remote_format(host: str, project_path: str, language: str) -> dict:
+    result = {}
+    if language in ("solidity", "all"):
+        code, out, err = ssh_exec(host, f"cd {project_path} && forge fmt --check 2>&1", timeout=30)
+        result["solidity"] = {"ok": code == 0, "output": (out + err)[:500]}
+    if language in ("js-ts", "all"):
+        code, out, err = ssh_exec(host, f"cd {project_path} && npx prettier --check '**/*.{{ts,tsx,js,jsx}}' 2>&1", timeout=60)
+        result["js-ts"] = {"ok": code == 0, "output": (out + err)[:500]}
+    if language in ("python", "all"):
+        code, out, err = ssh_exec(host, f"cd {project_path} && find . -name '*.py' -not -path '*/.venv/*' | xargs black --check --diff 2>&1", timeout=60)
+        result["python"] = {"ok": code == 0, "output": (out + err)[:500]}
+    return result
+
+
+def remote_types(host: str, project_path: str, language: str) -> dict:
+    result = {}
+    if language in ("js-ts", "all"):
+        code, out, err = ssh_exec(host, f"cd {project_path} && npx tsc --noEmit 2>&1", timeout=60)
+        result["js-ts"] = {"ok": code == 0, "errors": (out + err)[:1000]}
+    if language in ("python", "all"):
+        code, out, err = ssh_exec(host, f"cd {project_path} && find . -name '*.py' -not -path '*/.venv/*' | xargs mypy 2>&1", timeout=60)
+        result["python"] = {"ok": code == 0, "errors": (out + err)[:1000]}
+    return result
+
+
+def remote_complexity(host: str, project_path: str) -> dict:
+    result = {}
+    code, out, err = ssh_exec(host, f"cd {project_path} && find . -name '*.py' -not -path '*/.venv/*' | xargs radon cc -a -s 2>&1", timeout=60)
+    if out:
+        complexity = []
+        for line in out.split("\n"):
+            parts = line.strip().split()
+            if len(parts) >= 3 and parts[-1].startswith(('F', 'C', 'M')):
+                complexity.append({"function": parts[0], "complexity": parts[-2], "rank": parts[-1]})
+        result["python"] = complexity
+
+    code, out, err = ssh_exec(host, f"cd {project_path} && npx eslint '**/*.{{ts,tsx}}' --rule 'complexity: [warn, 10]' --rule 'max-lines-per-function: [warn, {{max: 80}}]' --format compact 2>&1", timeout=60)
+    if out:
+        result["typescript"] = [l.strip() for l in out.split("\n") if l.strip() and "complexity" in l.lower()]
+    return result
+
+
+def remote_deps(host: str, project_path: str) -> dict:
+    result = {}
+    code, out, err = ssh_exec(host, f"cd {project_path} && npm audit --json 2>&1", timeout=120)
+    if out and out.startswith("{"):
         try:
-            proc = subprocess.run(
-                ["npx", "tsc", "--noEmit"], cwd=project_path,
-                capture_output=True, text=True, timeout=60
-            )
-            if proc.returncode != 0:
-                for line in proc.stdout.split("\n") + proc.stderr.split("\n"):
-                    line = line.strip()
-                    if line and "error TS" in line:
-                        results.append({"tool": "tsc", "file": "", "line": 0, "message": line, "severity": "P0"})
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            results.append({"tool": "tsc", "file": "", "line": 0, "message": "tsc not available", "severity": "P2"})
+            data = json.loads(out)
+            result["npm"] = data.get("metadata", {}).get("vulnerabilities", {})
+        except json.JSONDecodeError:
+            result["npm"] = {"raw": out[:500]}
 
-    # prettier
-    try:
-        proc = subprocess.run(
-            ["npx", "prettier", "--check"] + files, cwd=project_path,
-            capture_output=True, text=True, timeout=60
-        )
-        if proc.returncode != 0:
-            bad = [l.strip() for l in proc.stderr.split("\n") if l.strip()]
-            results.append({"tool": "prettier", "file": "", "line": 0, "message": "\n".join(bad[:10]), "severity": "P1"})
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        results.append({"tool": "prettier", "file": "", "line": 0, "message": "prettier not available", "severity": "P2"})
-
-    return {"found": True, "fileCount": len(files), "issues": results}
-
-
-def lint_python(project_path: str) -> dict:
-    files = find_files(project_path, ['.py'])
-    if not files:
-        return {"found": False, "issues": []}
-
-    results = []
-
-    # ruff
-    try:
-        proc = subprocess.run(
-            ["ruff", "check"] + files, capture_output=True, text=True, timeout=60
-        )
-        for line in proc.stdout.strip().split("\n"):
-            if line.strip():
-                results.append({"tool": "ruff", "file": "", "line": 0, "message": line, "severity": "P1"})
-    except FileNotFoundError:
-        results.append({"tool": "ruff", "file": "", "line": 0, "message": "ruff not installed", "severity": "P2"})
-
-    # black check
-    try:
-        proc = subprocess.run(
-            ["black", "--check", "--diff"] + files, capture_output=True, text=True, timeout=60
-        )
-        if proc.returncode != 0:
-            results.append({"tool": "black", "file": "", "line": 0, "message": "format issues found", "severity": "P1"})
-    except FileNotFoundError:
-        results.append({"tool": "black", "file": "", "line": 0, "message": "black not installed", "severity": "P2"})
-
-    # mypy
-    try:
-        proc = subprocess.run(
-            ["mypy"] + files, capture_output=True, text=True, timeout=60
-        )
-        if proc.returncode != 0:
-            for line in proc.stdout.strip().split("\n"):
-                if line.strip():
-                    results.append({"tool": "mypy", "file": "", "line": 0, "message": line, "severity": "P0"})
-    except FileNotFoundError:
-        results.append({"tool": "mypy", "file": "", "line": 0, "message": "mypy not installed", "severity": "P2"})
-
-    return {"found": True, "fileCount": len(files), "issues": results}
-
-
-def review_complexity(project_path: str) -> dict:
-    results = {}
-    py_files = find_files(project_path, ['.py'])
-    if py_files:
+    code, out, err = ssh_exec(host, f"cd {project_path} && find . -name 'requirements*.txt' -not -path '*/.venv/*' | head -1 | xargs -I{{}} pip-audit -r {{}} --format json 2>&1", timeout=120)
+    if out and out.startswith("["):
         try:
-            proc = subprocess.run(
-                ["radon", "cc"] + py_files + ["-a", "-s"],
-                capture_output=True, text=True, timeout=60
-            )
-            complexity = []
-            for line in proc.stdout.strip().split("\n"):
-                if line.strip():
-                    parts = line.split()
-                    if len(parts) >= 3 and parts[-1].startswith(('F','C','M')):
-                        complexity.append({"function": parts[0], "complexity": parts[-2], "rank": parts[-1]})
-            results["python"] = complexity
-        except FileNotFoundError:
-            results["python"] = {"error": "radon not installed"}
-
-    ts_files = find_files(project_path, ['.ts', '.tsx'])
-    if ts_files:
-        try:
-            proc = subprocess.run(
-                ["eslint"] + ts_files + ["--rule", "complexity: [warn, 10]", "--rule", "max-lines-per-function: [warn, {max: 80}]", "--format", "compact"],
-                capture_output=True, text=True, timeout=60
-            )
-            results["typescript"] = [l.strip() for l in proc.stdout.split("\n") if l.strip() and "complexity" in l.lower()]
-        except FileNotFoundError:
-            results["typescript"] = {"error": "eslint not installed"}
-
-    return results
-
-
-def review_deps(project_path: str) -> dict:
-    results = {}
-
-    pkg_json = os.path.join(project_path, "package.json")
-    if os.path.exists(pkg_json):
-        try:
-            proc = subprocess.run(
-                ["npm", "audit", "--json"], cwd=project_path,
-                capture_output=True, text=True, timeout=120
-            )
-            if proc.returncode != 0:
-                try:
-                    data = json.loads(proc.stdout)
-                    vuln = data.get("metadata", {}).get("vulnerabilities", {})
-                    results["npm"] = vuln
-                except json.JSONDecodeError:
-                    results["npm"] = {"error": "failed to parse audit output"}
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            results["npm"] = {"error": "npm not available"}
-
-    req_files = find_files(project_path, ['requirements.txt', 'requirements-dev.txt'])
-    if req_files:
-        try:
-            proc = subprocess.run(
-                ["pip-audit", "-r", req_files[0], "--format", "json"],
-                capture_output=True, text=True, timeout=120
-            )
-            if proc.stdout.strip():
-                try:
-                    results["python"] = json.loads(proc.stdout)
-                except json.JSONDecodeError:
-                    results["python"] = json.loads(proc.stdout) if proc.stdout.strip().startswith('[') else {"raw": proc.stdout.strip()}
-        except FileNotFoundError:
-            results["python"] = {"error": "pip-audit not installed"}
-
-    return results
+            result["python"] = json.loads(out)
+        except json.JSONDecodeError:
+            result["python"] = {"raw": out[:500]}
+    return result
 
 
 # --- MCP HTTP Handler ---
@@ -245,146 +152,103 @@ import urllib.parse
 
 TOOLS = {
     "review_lint": {
-        "description": "Run lint checks on a project (solidity/js-ts/python). Returns issues with severity.",
+        "description": "Run lint checks on target host via SSH (solidity/js-ts/python).",
         "parameters": {
             "type": "object",
             "properties": {
-                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "all"]},
-                "project_path": {"type": "string", "description": "Absolute path to project root on server"}
+                "host": {"type": "string", "description": "Target host IP"},
+                "project_path": {"type": "string", "description": "Absolute project path on target host"},
+                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "all"]}
             },
-            "required": ["language", "project_path"]
+            "required": ["host", "project_path", "language"]
         }
     },
     "review_format": {
-        "description": "Check code formatting (forge fmt/prettier/black). Returns files needing format.",
+        "description": "Check code formatting on target host (forge fmt/prettier/black).",
         "parameters": {
             "type": "object",
             "properties": {
-                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "all"]},
-                "project_path": {"type": "string"}
+                "host": {"type": "string"},
+                "project_path": {"type": "string"},
+                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "all"]}
             },
-            "required": ["language", "project_path"]
+            "required": ["host", "project_path", "language"]
         }
     },
     "review_types": {
-        "description": "Run type checks (tsc/mypy). Returns type errors.",
+        "description": "Run type checks on target host (tsc/mypy).",
         "parameters": {
             "type": "object",
             "properties": {
-                "language": {"type": "string", "enum": ["js-ts", "python", "all"]},
-                "project_path": {"type": "string"}
+                "host": {"type": "string"},
+                "project_path": {"type": "string"},
+                "language": {"type": "string", "enum": ["js-ts", "python", "all"]}
             },
-            "required": ["language", "project_path"]
+            "required": ["host", "project_path", "language"]
         }
     },
     "review_complexity": {
-        "description": "Analyze code complexity (cyclomatic, function length). Returns ranked results.",
+        "description": "Analyze code complexity on target host (radon/eslint).",
         "parameters": {
             "type": "object",
             "properties": {
+                "host": {"type": "string"},
                 "project_path": {"type": "string"}
             },
-            "required": ["project_path"]
+            "required": ["host", "project_path"]
         }
     },
     "review_deps": {
-        "description": "Audit dependencies for vulnerabilities (npm audit, pip-audit).",
+        "description": "Audit dependencies on target host (npm audit/pip-audit).",
         "parameters": {
             "type": "object",
             "properties": {
+                "host": {"type": "string"},
                 "project_path": {"type": "string"}
             },
-            "required": ["project_path"]
+            "required": ["host", "project_path"]
         }
     },
     "review_all": {
-        "description": "Run full code quality review: lint + format + types + complexity + deps.",
+        "description": "Full code review on target host: lint + format + types + complexity + deps.",
         "parameters": {
             "type": "object",
             "properties": {
-                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "all"]},
-                "project_path": {"type": "string"}
+                "host": {"type": "string"},
+                "project_path": {"type": "string"},
+                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "all"]}
             },
-            "required": ["language", "project_path"]
+            "required": ["host", "project_path", "language"]
         }
     }
 }
 
 
 def call_tool(tool_name: str, args: dict) -> dict:
-    lang = args.get("language", "all")
+    host = args["host"]
     pp = args["project_path"]
+    lang = args.get("language", "all")
 
     if tool_name == "review_lint":
-        result = {}
-        if lang in ("solidity", "all"):
-            result["solidity"] = lint_solidity(pp)
-        if lang in ("js-ts", "all"):
-            result["js-ts"] = lint_typescript(pp)
-        if lang in ("python", "all"):
-            result["python"] = lint_python(pp)
-        return result
-
+        return remote_lint(host, pp, lang)
     elif tool_name == "review_format":
-        result = {}
-        if lang in ("solidity", "all"):
-            try:
-                proc = subprocess.run(["forge", "fmt", "--check"], cwd=pp, capture_output=True, text=True, timeout=30)
-                result["solidity"] = {"ok": proc.returncode == 0, "output": proc.stdout.strip()[:500]}
-            except FileNotFoundError:
-                result["solidity"] = {"error": "forge not installed"}
-        if lang in ("js-ts", "all"):
-            try:
-                proc = subprocess.run(["npx", "prettier", "--check", f"{pp}/**/*.{{ts,tsx,js,jsx}}"], capture_output=True, text=True, timeout=60)
-                result["js-ts"] = {"ok": proc.returncode == 0, "output": proc.stdout.strip()[:500]}
-            except FileNotFoundError:
-                result["js-ts"] = {"error": "prettier not installed"}
-        if lang in ("python", "all"):
-            py_files = find_files(pp, ['.py'])
-            if py_files:
-                try:
-                    proc = subprocess.run(["black", "--check"] + py_files, capture_output=True, text=True, timeout=60)
-                    result["python"] = {"ok": proc.returncode == 0, "output": proc.stdout.strip()[:500]}
-                except FileNotFoundError:
-                    result["python"] = {"error": "black not installed"}
-        return result
-
+        return remote_format(host, pp, lang)
     elif tool_name == "review_types":
-        result = {}
-        if lang in ("js-ts", "all"):
-            tsconfig = os.path.join(pp, "tsconfig.json")
-            if os.path.exists(tsconfig):
-                try:
-                    proc = subprocess.run(["npx", "tsc", "--noEmit"], cwd=pp, capture_output=True, text=True, timeout=60)
-                    result["js-ts"] = {"ok": proc.returncode == 0, "errors": proc.stdout.strip()[:1000]}
-                except FileNotFoundError:
-                    result["js-ts"] = {"error": "tsc not installed"}
-        if lang in ("python", "all"):
-            py_files = find_files(pp, ['.py'])
-            if py_files:
-                try:
-                    proc = subprocess.run(["mypy"] + py_files, capture_output=True, text=True, timeout=60)
-                    result["python"] = {"ok": proc.returncode == 0, "errors": proc.stdout.strip()[:1000]}
-                except FileNotFoundError:
-                    result["python"] = {"error": "mypy not installed"}
-        return result
-
+        return remote_types(host, pp, lang)
     elif tool_name == "review_complexity":
-        return review_complexity(pp)
-
+        return remote_complexity(host, pp)
     elif tool_name == "review_deps":
-        return review_deps(pp)
-
+        return remote_deps(host, pp)
     elif tool_name == "review_all":
-        lang = args.get("language", "all")
         return {
-            "lint": call_tool("review_lint", {"language": lang, "project_path": pp}),
-            "format": call_tool("review_format", {"language": lang, "project_path": pp}),
-            "types": call_tool("review_types", {"language": lang, "project_path": pp}),
-            "complexity": call_tool("review_complexity", {"project_path": pp}),
-            "deps": call_tool("review_deps", {"project_path": pp}),
+            "host": host,
+            "project": pp,
+            "lint": remote_lint(host, pp, lang),
+            "format": remote_format(host, pp, lang),
+            "types": remote_types(host, pp, lang),
+            "complexity": remote_complexity(host, pp),
+            "deps": remote_deps(host, pp),
         }
-
     return {"error": f"unknown tool: {tool_name}"}
 
 
@@ -399,18 +263,13 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_OPTIONS(self):
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept")
-        self.end_headers()
+        self._json(204, {"result": None})
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/health":
-            self._json(200, {"status": "ok", "version": "1.0.0"})
+            self._json(200, {"status": "ok", "version": "2.0.0", "mode": "ssh-proxy"})
         elif parsed.path == "/mcp":
-            # For SSE GET — not fully implemented, use POST
             self._json(405, {"error": "use POST for MCP"})
         else:
             self._json(404, {"error": "not found"})
@@ -420,42 +279,40 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(length)) if length else {}
 
         parsed = urllib.parse.urlparse(self.path)
-
-        if parsed.path == "/mcp":
-            method = body.get("method", "")
-            msg_id = body.get("id")
-
-            if method == "initialize":
-                self._json(200, {
-                    "id": msg_id,
-                    "result": {
-                        "protocolVersion": "2025-06-18",
-                        "capabilities": {"tools": {}},
-                        "serverInfo": {"name": "code-review-mcp", "version": "1.0.0"}
-                    }
-                })
-            elif method == "tools/list":
-                tools_list = []
-                for name, schema in TOOLS.items():
-                    tools_list.append({"name": name, "description": schema["description"], "inputSchema": schema["parameters"]})
-                self._json(200, {"id": msg_id, "result": {"tools": tools_list}})
-            elif method == "tools/call":
-                tool_name = body["params"]["name"]
-                args = body["params"].get("arguments", {})
-                result = call_tool(tool_name, args)
-                self._json(200, {"id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}})
-            elif method == "notifications/initialized":
-                self._json(200, {"id": msg_id, "result": {}})
-            else:
-                self._json(400, {"id": msg_id, "error": {"code": -32601, "message": f"unknown method: {method}"}})
-        else:
+        if parsed.path != "/mcp":
             self._json(404, {"error": "not found"})
+            return
+
+        method = body.get("method", "")
+        msg_id = body.get("id")
+
+        if method == "initialize":
+            self._json(200, {
+                "id": msg_id,
+                "result": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "agent-review-mcp", "version": "2.0.0"}
+                }
+            })
+        elif method == "tools/list":
+            tools_list = [{"name": n, "description": s["description"], "inputSchema": s["parameters"]} for n, s in TOOLS.items()]
+            self._json(200, {"id": msg_id, "result": {"tools": tools_list}})
+        elif method == "tools/call":
+            tool_name = body["params"]["name"]
+            args = body["params"].get("arguments", {})
+            result = call_tool(tool_name, args)
+            self._json(200, {"id": msg_id, "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}})
+        elif method == "notifications/initialized":
+            self._json(200, {"id": msg_id, "result": {}})
+        else:
+            self._json(400, {"id": msg_id, "error": {"code": -32601, "message": f"unknown method: {method}"}})
 
 
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9020
     server = http.server.HTTPServer(("0.0.0.0", port), MCPHandler)
-    log.info(f"Code Review MCP Server listening on 0.0.0.0:{port}")
+    log.info(f"Agent Review MCP Server (v2.0, SSH proxy) listening on 0.0.0.0:{port}")
     server.serve_forever()
 
 
