@@ -94,18 +94,28 @@ code-review-mcp → /opt/mcp/repos/<team>/ → reports tagged with SHA
 
 ## Code Review Flow
 
+code-review MCP 部署在 43.156.46.187:9001。通过 git-mcp 同步代码后，调 code-review 做机械检查。
+
 ```
-1. repo_sync("team3", "43.156.50.6", "/path/to/project")
-   → { sha: "abc123", fileCount: 42 }
+Step 1: 同步代码（git-mcp）
+  tool: repo_sync
+  params: { team: "team3", source_host: "43.156.50.6", source_path: "/home/ubuntu/.openclaw/workspace/team3" }
+  returns: { sha: "abc123", fileCount: 42 }
 
-2. Pass sha to code-review-mcp:
-   review_all("/opt/mcp/repos/team3", "all")
-   → Report MUST include snapshot_sha: "abc123"
+Step 2: 跑代码检查（code-review MCP）
+  tool: review_all
+  params: { project_path: "/opt/mcp/repos/team3", language: "all" }
+  报告必须标注 reviewed_sha: "abc123"
 
-3. repo_snapshot("team3") — get SHA without re-syncing
+Step 3: 获取 SHA（不重新同步）
+  tool: repo_snapshot
+  params: { team: "team3" }
+  returns: { sha: "abc123" }
 ```
 
-**Traceability rule:** Every code review report must include `snapshot_sha`.
+**路径映射**: `/opt/mcp/repos/` + team名称 → code-review 的 project_path
+**SHA 溯源**: repo_sync 返回的 `sha` 必须写入 code-review 报告的 `reviewed_sha` 字段。
+**职责边界**: git-mcp 只同步代码，不审查；code-review 只审查，不管理代码。
 
 ---
 
