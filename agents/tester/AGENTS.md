@@ -31,28 +31,25 @@
 
 ## 🧠 返回值解读
 
-所有 ⚡ 场景 tool 返回统一 verdict 格式：
+**所有 MCP Tool 统一返回三层报告格式：**
 
 ```json
 {
-  "verdict": "PASS" | "FAIL",
-  "verdict_confidence": "high",
-  "summary": "🟢 PASS (3/3) | ✅ forge build | ✅ forge test(33P/0F) | ✅ slither(0 issues)",
-  "passed": true,
-  "passed_count": 3,
-  "failed_count": 0,
-  "checks": [
-    {"step": "forge build", "passed": true, "status": "✅", "detail": "ok"}
-  ],
-  "suggestion": "继续下一项测试"
+  "verdict": "PASS",
+  "summary": "🟢 evm_block | block 11238741",
+  "checks": [{"step": "evm_block", "passed": true, "status": "✅"}],
+  "details": "{... 原始 JSON ...}"
 }
 ```
 
-**快速决策流程：**
-1. 先看 `verdict` — PASS 直接下一个，FAIL 看 suggestion
-2. 看 `summary` — 一行了解全貌
-3. 需要细节再看 `checks` 和 `details`
-4. **不要逐行解析 details 里的原始 JSON**，summary 足够
+**决策流程（按顺序）：**
+1. 看 `verdict` → PASS 直接下一个，FAIL 看 summary
+2. 看 `summary` → 一行了解全貌
+3. 看 `checks` → 分步结果，哪个 step 挂了
+4. `details` → 只在需要深究问题根因时展开，平时不读
+
+**场景 tool 自带详细 checks**（每步都有 step name + passed + detail），
+**原子 tool 自动包装**（框架层自动加 verdict/summary）。
 
 ## 🔐 认证
 
@@ -128,15 +125,18 @@ browser_navigate, api_get, api_post, data_fake, auth_status, auth_login
 
 ## 返回值
 
-### 场景 tool (verdict 格式)
+**所有 MCP Tool 统一三层报告：**
 ```json
-{ "verdict": "PASS", "summary": "...", "passed": true, "suggestion": "..." }
+{
+  "verdict": "PASS" | "FAIL",
+  "summary": "一行摘要",
+  "checks": [{"step": "...", "passed": true, "status": "✅"}],
+  "details": "{... 原始 JSON，只在深究时展开 ...}"
+}
 ```
 
-### 原子 tool (原始格式)
-```json
-{ "ok": true, "stdout": "...", "stderr": "...", "exit_code": 0 }
-```
+**只看前两层** — verdict + summary 就够了，不要读 details。
+FAIL 时才看 checks 找哪个 step 挂了。
 
 ## 假阳性杜绝
 
