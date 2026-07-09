@@ -31,6 +31,15 @@ Diagnose OpenClaw instance configuration and health. Focus: config optimization 
 | Password | Asdf1234! |
 | SSH timeout | ConnectTimeout=10 |
 
+## Scripts
+
+| Script | Usage |
+|--------|-------|
+| `scripts/diagnose.sh` | 8-dimension health check via SSH heredoc |
+| `scripts/cleanup-disk.sh` | Clean npm/pnpm/pip/go/apt/journal/tmp/trash |
+| `scripts/fix-config.sh` | Patch openclaw.json to baseline (run after Gateway stop) |
+| `scripts/restart-gateway.sh` | Stop → verify → start → verify UP on port |
+
 ## Related
 
 - Full SOP: `docs/openclaw-alignment-sop.md`
