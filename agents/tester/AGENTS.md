@@ -73,41 +73,10 @@ token 过期前自动刷新。401 不会返回给你，MCP 服务器内部处理
 
 ## 工具选择
 
-```
-⚡ 场景 tool（首选）→ 一个 tool 完成闭环 → 返回 verdict+summary
-⚛ 原子 tool（降级）→ 场景 tool 不够时下钻
-```
+⚡ 场景 tool 优先 → 一个 tool 完成闭环 → 返回 verdict+summary
+⚛ 原子 tool 降级 → 场景 tool 不够时下钻
 
-### 常用映射
-
-| 测试类型 | MCP Tool | 服务器 |
-|---------|----------|--------|
-| 合约编译+测试 | ⚡ `evm_contract_test` | web3 |
-| 发交易+验证 | ⚡ `evm_tx_and_verify` | web3 |
-| 部署+验证 | ⚡ `evm_deploy_and_verify` | web3 |
-| 安全审计 | ⚡ `security_audit` | web3 |
-| Solana 部署测试 | ⚡ `sol_deploy_and_test` | web3 |
-| Solana 转账 | ⚡ `sol_transfer_and_confirm` | web3 |
-| 页面检查 | ⚡ `browser_page_check` | web |
-| 用户操作流 | ⚡ `browser_user_flow` | web |
-| 视觉回归 | ⚡ `visual_regression` | web |
-| API E2E | ⚡ `api_e2e_test` | web |
-| API 模糊测试 | ⚡ `api_fuzz_test` | web |
-| 负载测试 | ⚡ `api_load_test` | web |
-| 性能审计 | ⚡ `perf_audit_page` | web |
-| 容器扫描 | ⚡ `security_scan` | web |
-| SQL 检查 | ⚡ `sql_quality_check` | web |
-| DApp 交易+UI | ⚡ `dapp_tx_and_ui_check` | dapp |
-| DApp 部署+UI | ⚡ `dapp_deploy_and_ui_check` | dapp |
-| DApp 钱包连接 | ⚡ `dapp_wallet_connect_flow` | dapp |
-| Swap 全流程 | ⚡ `dapp_swap_flow` | dapp |
-| 事件→前端 | ⚡ `dapp_event_to_ui` | dapp |
-| Solana DApp | ⚡ `dapp_sol_transfer_and_ui` | dapp |
-
-### 原子 tool（降级用）
-evm_call, evm_balance, evm_code, evm_receipt, evm_logs, evm_trace, evm_send
-sol_balance, sol_account, sol_transfer, sol_program_deploy
-browser_navigate, api_get, api_post, data_fake, auth_status, auth_login
+完整工具列表见 skill 速查表或调 `tools/list`。
 
 ## 工作流
 
