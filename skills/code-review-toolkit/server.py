@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Code Review MCP Server v3.2 — local filesystem mode + REST API
+Code Review MCP Server v3.3 — local filesystem mode + REST API + aggregated report
 Deploy on central MCP server. All team code lives on this server (git-managed).
 Review runs locally over /opt/mcp/repos/<team>/.
 
@@ -303,6 +303,17 @@ TOOLS = {
             },
             "required": ["project_path", "language"]
         }
+    },
+    "report": {
+        "description": "Aggregated quality report — runs review_all and returns scored summary with breakdown.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_path": {"type": "string"},
+                "language": {"type": "string", "enum": ["solidity", "js-ts", "python", "shell", "all"]}
+            },
+            "required": ["project_path"]
+        }
     }
 }
 
@@ -359,7 +370,7 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/health":
-            self._json(200, {"status": "ok", "version": "3.2.0", "mode": "local"})
+            self._json(200, {"status": "ok", "version": "3.3.0", "mode": "local"})
         elif parsed.path == "/api/tools":
             tools_list = [{"name": n, "description": s["description"]} for n, s in TOOLS.items()]
             self._json(200, {"tools": tools_list})
@@ -390,6 +401,19 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
             self._json(200 if result.get("status") == "ok" else 400, result)
             return
 
+        if parsed.path == "/api/report":
+            if not body or not body.get("project_path"):
+                self._json(400, {"error": "project_path required"})
+                return
+            args = {
+                "project_path": body["project_path"],
+                "language": body.get("language", "all")
+            }
+            result = call_tool("review_all", args)
+            report = _build_report(body["project_path"], result)
+            self._json(200, report)
+            return
+
         # --- MCP JSON-RPC routes ---
         if parsed.path != "/mcp":
             self._json(404, {"error": "not found"})
@@ -404,7 +428,7 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
                 "result": {
                     "protocolVersion": "2025-06-18",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "code-review-mcp", "version": "3.2.0"}
+                    "serverInfo": {"name": "code-review-mcp", "version": "3.3.0"}
                 }
             })
         elif method == "tools/list":
@@ -419,6 +443,70 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
             self._json(200, {"id": msg_id, "result": {}})
         else:
             self._json(400, {"id": msg_id, "error": {"code": -32601, "message": f"unknown method: {method}"}})
+
+
+def _build_report(project_path, review_result):
+    """Build aggregated report from review_all raw results."""
+    results = review_result.get("results", {})
+    breakdown = {}
+    total_p0 = 0
+    total_p1 = 0
+    total_p2 = 0
+    top_issues = []
+
+    for tool_name in ["lint", "format", "types", "complexity", "deps"]:
+        r = results.get(tool_name, {})
+        p0 = r.get("p0_count", 0) if isinstance(r, dict) else 0
+        p1 = r.get("p1_count", 0) if isinstance(r, dict) else 0
+        total = p0 + p1
+        # score: start at 100, -5 per P0, -2 per P1, min 0
+        score = max(0, 100 - p0 * 5 - p1 * 2)
+        breakdown[tool_name] = {"score": score, "p0": p0, "p1": p1, "status": "fail" if p0 > 0 else ("warn" if p1 > 0 else "pass")}
+        total_p0 += p0
+        total_p1 += p1
+
+        # collect top issues
+        issues = r.get("issues", []) if isinstance(r, dict) else []
+        for issue in issues:
+            sev = issue.get("severity", "").upper() if isinstance(issue, dict) else ""
+            if sev in ("P0", "P1", "ERROR"):
+                top_issues.append({
+                    "tool": tool_name,
+                    "severity": sev,
+                    "file": issue.get("file", "") if isinstance(issue, dict) else "",
+                    "line": issue.get("line", "") if isinstance(issue, dict) else "",
+                    "message": issue.get("message", str(issue)) if isinstance(issue, dict) else str(issue)
+                })
+
+    # overall score: weighted average
+    weights = {"lint": 0.3, "format": 0.15, "types": 0.3, "complexity": 0.1, "deps": 0.15}
+    overall = sum(breakdown[k]["score"] * weights[k] for k in weights)
+
+    if total_p0 > 0:
+        status = "fail"
+        summary = f"{total_p0}P0, {total_p1}P1 — BLOCKED. Fix P0 before review."
+    elif total_p1 > 0:
+        status = "warn"
+        summary = f"{total_p0}P0, {total_p1}P1 — ready for L1 review with {total_p1} warnings"
+    else:
+        status = "pass"
+        summary = "Clean. No issues detected. Ready for L1-L3 review."
+
+    top_issues.sort(key=lambda x: ({"P0": 0, "P1": 1, "ERROR": 2}.get(x["severity"], 3)))
+
+    return {
+        "status": "ok",
+        "report": {
+            "project": project_path,
+            "score": round(overall, 1),
+            "status": status,
+            "summary": summary,
+            "p0_total": total_p0,
+            "p1_total": total_p1,
+            "breakdown": breakdown,
+            "top_issues": top_issues[:15]
+        }
+    }
 
 
 def main():
