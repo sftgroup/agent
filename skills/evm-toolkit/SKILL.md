@@ -1,7 +1,7 @@
 ---
 name: evm-toolkit
 description: "EVM multichain ops — cast/hardhat for Ethereum, BSC, Polygon, Arbitrum, Base. ERC20, contract deploy/call, event logs, EIP-1559 gas."
-metadata: {"clawdbot":{"emoji":"⛓️","requires":{"commands":["cast","forge","npx"]},"homepage":"https://github.com/sftgroup/contra-agent-skills"}}
+metadata: {"clawdbot":{"emoji":"⛓️","requires":{"commands":["cast","forge","npx"]},"homepage":"https://github.com/sftgroup/agent"}}
 ---
 
 # EVM Toolkit
@@ -31,34 +31,12 @@ Multichain ops distilled from Contra AI 4-chain (BSC/ETH/Base) mainnet deploymen
 - `.env` in `.gitignore` always
 - Use EIP-1559 (Type 2) for mainnet
 
-## Hardhat config (multi-chain template)
+## Bundled scripts
 
-```js
-require("@nomiclabs/hardhat-ethers");
-require("dotenv").config();
-
-module.exports = {
-  solidity: { version: "0.8.28", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "cancun" }},
-  networks: {
-    bsc:  { url: process.env.BSC_RPC || "",  chainId: 56,    accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [] },
-    eth:  { url: process.env.ETH_RPC || "",  chainId: 1,     accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [] },
-    base: { url: process.env.BASE_RPC || "", chainId: 8453,  accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [] },
-    polygon: { url: process.env.POLYGON_RPC || "", chainId: 137, accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [] },
-    arbitrum: { url: process.env.ARB_RPC || "", chainId: 42161, accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [] },
-  }
-};
-```
-
-## Deploy script pattern
-
-```js
-const [deployer] = await hre.ethers.getSigners();
-const Factory = await hre.ethers.getContractFactory("ContractName");
-const c = await Factory.deploy(...args, { gasLimit: 3000000 });
-await c.deployed();
-```
-
-Run: `npx hardhat run scripts/deploy.js --network bsc`
+- `scripts/deploy-multichain.js` — Hardhat multi-chain deploy, reads `contracts-config.json`, auto-writes `DEPLOY_RECORDS.md`. Run: `npx hardhat run scripts/deploy-multichain.js --network bsc`
+- `scripts/cast-ops.sh` — Wrapped cast: `cast-ops.sh balance eth 0x...`, `cast-ops.sh sync 0x...` for cross-chain nonce check
+- `assets/hardhat.config.js` — Drop-in 6-chain template (eth/bsc/base/polygon/arb/sepolia)
+- `assets/.env.template` — RPC + PK + explorer API key template
 
 ## cast quick reference
 
@@ -74,11 +52,11 @@ cast code $CONTRACT --rpc-url $RPC | wc -c
 
 # ERC20
 cast call $TOKEN "allowance(address,address)(uint256)" $OWNER $SPENDER --rpc-url $RPC
-cast send $TOKEN "approve(address,uint256)" $SPENDER $AMOUNT --rpc-url $RPC --private-key $PK
-cast send $TOKEN "transfer(address,uint256)" $TO $AMOUNT --rpc-url $RPC --private-key $PK
+cast send $TOKEN "approve(address,uint256)" $SPENDER $AMOUNT --rpc-url $RPC --private-key ***
+cast send $TOKEN "transfer(address,uint256)" $TO $AMOUNT --rpc-url $RPC --private-key ***
 
 # Contract calls
-cast send $CONTRACT "mint()" --value 0.1ether --rpc-url $RPC --private-key $PK
+cast send $CONTRACT "mint()" --value 0.1ether --rpc-url $RPC --private-key ***
 cast send $CONTRACT "mint()" --gas-limit 300000 --max-fee-per-gas 50gwei --max-priority-fee-per-gas 2gwei --rpc-url $RPC --pk $PK
 
 # Event logs
@@ -123,7 +101,6 @@ cast nonce $DEPLOYER --rpc-url $BASE_RPC
 npx hardhat verify --network eth $ADDR $ARG1 $ARG2
 # Multi-file: flatten first
 npx hardhat flatten src/Contract.sol > flat.sol
-# Submit manually on explorer
 ```
 
 ## Gas strategy
@@ -137,47 +114,19 @@ npx hardhat flatten src/Contract.sol > flat.sol
 
 Stuck tx: replace with same nonce + higher gas.
 
-## Pitfalls (from Contra AI mainnet)
+## Pitfalls
 
-1. Public RPC `eth_getLogs` throttled → use commercial RPC
-2. Nonce mismatch across chains → sync before deploy
-3. EstimateGas fails when state unsatisfied → manual calldata + gasLimit
-4. EIP-712 fails → check type name matches `_TYPEHASH`, BigInt→String()
-5. OZ v5 domain: no `salt`/`extensions` in separator
-6. BSC tx stuck → bump gas or replace-same-nonce
-7. Never `hre.changeNetwork()` — run separate `npx hardhat run --network <x>`
-8. `.env` leaked to git → `.gitignore` check before commit
-9. Deploy records lost → auto-write `DEPLOY_RECORDS.md` in script
+| # | Problem | Root cause | Fix |
+|---|---------|------------|-----|
+| 1 | `eth_getLogs` 429 | Public RPC throttled | Commercial RPC (Infura/Alchemy) |
+| 2 | Nonce mismatch across chains | Extra tx on one chain | Sync nonce before deploy |
+| 3 | Contract address differs | Nonce ≠ → CREATE address ≠ | Re-deploy after nonce sync |
+| 4 | estimateGas reverts | State unsatisfied (allowance etc.) | Manual calldata + fixed gasLimit |
+| 5 | EIP-712 signature rejected | Type name/field mismatch | Match contract `_TYPEHASH` exactly |
+| 6 | OZ v5 domain mismatch | Extra salt/extensions in domain | Use standard 4-field domain only |
+| 7 | BSC tx pending forever | Gas too low | Bump gas or replace-same-nonce |
+| 8 | Hardhat crash on chain switch | `hre.changeNetwork()` unreliable | Separate `npx hardhat run --network <x>` |
+| 9 | `.env` leaked to git | Missing `.gitignore` | `git status` before commit |
+| 10 | Deploy records lost | No auto-logging | `deploy-multichain.js` writes `DEPLOY_RECORDS.md` |
 
 See `references/pitfalls.md` for detailed Contra AI war stories.
-
-## Bundled Scripts & Templates
-
-### scripts/
-
-- `scripts/deploy-multichain.js` — Hardhat multi-chain deploy, reads `contracts-config.json`, auto-writes `DEPLOY_RECORDS.md`
-- `scripts/cast-ops.sh` — Wrapped cast operations: `cast-ops.sh balance eth 0x...`, `cast-ops.sh sync 0x...` for cross-chain nonce check
-
-### assets/
-
-- `assets/hardhat.config.js` — Drop-in multi-chain template with eth/bsc/base/polygon/arb/sepolia
-- `assets/.env.template` — RPC + private key + explorer API key template
-
-### Usage
-
-```bash
-# Quick query
-source scripts/cast-ops.sh
-chain-use bsc
-cast-balance 0x...
-cast-erc20-info 0xTOKEN
-
-# Cross-chain nonce sync (pre-deploy check)
-scripts/cast-ops.sh sync 0xDEPLOYER
-
-# Deploy
-cp assets/hardhat.config.js contracts/
-cp assets/.env.template .env
-# edit .env with real keys
-npx hardhat run scripts/deploy-multichain.js --network bsc
-```
