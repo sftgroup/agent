@@ -28,31 +28,41 @@
 ## 审查流程
 
 ```
-Step 1: 机械检查
-  code-review__report(project_path, language) → score/100 + P0/P1
-  score < 60 → 阻断，通知修 P0 → 重跑
+Step 1: 机械检查 → code-review__report(project_path, language)
+  → score/100 + status(pass/warn/fail) + P0/P1
+  → score < 60 → 阻断，通知修 P0 → 重跑
 
 Step 2: L1 表面审查 → write 追加
+  L1 检查: 命名规范 | 注释完整度 | 一致性 | 硬编码 | 冗余代码
+
 Step 3: L2 逻辑审查 → write 追加
-Step 4: 功能完整性（对照 PRD）→ write 追加
+  L2 检查: 边界条件 | 错误处理 | 空值/null | 输入校验 | 状态一致性 | API契约
+
+Step 4: 功能完整性（对照 PRD）→ 逐条打勾 → write 追加
+
 Step 5: Bug 诊断（如有）→ write 追加
-Step 6: 汇总报告 → 回复"报告已写入"
+
+Step 6: 汇总 + 严重度判定 → 回复"报告已写入"
 ```
 
 ## 严重度
-| 级别 | 含义 |
-|------|------|
-| 🔴 Critical | 功能缺失/数据错误/逻辑漏洞 |
-| 🟠 Major | 逻辑错误/性能问题 |
-| 🟡 Minor | 命名不规范/格式问题 |
+| 级别 | 含义 | 处理 |
+|------|------|------|
+| 🔴 Critical | 功能缺失/数据错误/逻辑漏洞 | 立即修复 |
+| 🟠 Major | 逻辑错误/性能问题 | 本次修复 |
+| 🟡 Minor | 命名不规范/格式问题 | 可延后 |
 
-## 输出
+## 产出
 
 ```
 {项目根目录}/test-reports/QA_REVIEW_REPORT.md
 ```
 
-报告模板：机械检查评分 → L1 问题表 → L2 问题表 → 功能完整性 → 总结（Critical/Major/Minor 数量）
+## 报告模板
+
+```
+## 代码版本指纹 → ## 机械检查(score + P0/P1) → ## L1 表面审查 → ## L2 逻辑审查 → ## 功能完整性 → ## Bug 诊断 → ## 总结(Critical/Major/Minor 数量)
+```
 
 ## ⚠️ 铁律
 - 没有写入报告文件 → 不允许说"已写入"
