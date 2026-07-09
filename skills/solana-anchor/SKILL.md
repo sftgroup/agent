@@ -2,12 +2,24 @@
 name: solana-anchor
 description: "Solana Anchor framework: SBF compilation, PDA/Timelock/SPL Token patterns, deploy, debug, and mainnet safety."
 user-invocable: true
-metadata: { "openclaw": { "requires": { "bins": ["solana", "cargo"], "anyBins": ["cargo-build-sbf"] }, "os": ["linux"] } }
+metadata: { "openclaw": { "requires": { "bins": ["solana", "cargo"], "anyBins": ["cargo-build-sbf"] }, "os": ["linux"], "install": [{ "id": "solana", "kind": "download", "url": "https://release.anza.xyz/v2.3.3/agave-install-init-x86_64-unknown-linux-gnu", "bins": ["solana", "cargo-build-sbf"], "label": "Install Solana CLI 2.3.3" }] } }
 ---
 
 # Solana Anchor 合约开发 Skill
 
 > 基于 Contra AI NFT 合约编译部署实战总结。适用 Anchor 框架及原生 Solana 程序。本机工具链：Solana CLI 2.3.3, platform-tools v1.48, Node v22。
+
+---
+
+## Auto-Install (if toolchain missing)
+
+Run `scripts/solana-install.sh` to install Solana CLI 2.3.3 when `solana` or `cargo build-sbf` is not on PATH:
+
+```bash
+bash {baseDir}/scripts/solana-install.sh
+```
+
+The script downloads Agave 2.3.3, installs to `~/.local/share/solana/`, adds to PATH, and verifies.
 
 ---
 
