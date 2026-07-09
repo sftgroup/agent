@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 
 let _providerCache: Record<string, ethers.providers.JsonRpcProvider> = {};
-let _walletCache: ethers.Wallet | null = null;
+let _walletCache: Record<string, ethers.Wallet> = {};
 
 function getProvider(chain: string): ethers.providers.JsonRpcProvider {
   if (!_providerCache[chain]) {
@@ -16,13 +16,23 @@ function getProvider(chain: string): ethers.providers.JsonRpcProvider {
   return _providerCache[chain];
 }
 
-function getWallet(chain: string): ethers.Wallet {
-  if (!_walletCache) {
-    const pk = process.env.PRIVATE_KEY;
-    if (!pk) throw new Error("PRIVATE_KEY not set");
-    _walletCache = new ethers.Wallet(pk);
+/** Resolve private key: PRIVATE_KEY_<CHAIN> > PRIVATE_KEY */
+function resolvePK(chain?: string): string {
+  if (chain) {
+    const perChain = process.env[`PRIVATE_KEY_${chain.toUpperCase()}`];
+    if (perChain) return perChain;
   }
-  return _walletCache.connect(getProvider(chain));
+  const pk = process.env.PRIVATE_KEY || process.env.DEPLOYER_PK;
+  if (!pk) throw new Error("PRIVATE_KEY not set (chain=" + (chain || "default") + ")");
+  return pk;
+}
+
+function getWallet(chain?: string): ethers.Wallet {
+  const key = chain || "default";
+  if (!_walletCache[key]) {
+    _walletCache[key] = new ethers.Wallet(resolvePK(chain));
+  }
+  return _walletCache[key].connect(getProvider(chain || "eth"));
 }
 
 // ─── evm_status ──────────────────────────────────────
