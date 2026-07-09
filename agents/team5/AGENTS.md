@@ -61,62 +61,82 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 
 ## MCP 工具使用规则
 
-本 agent 接入中心 MCP 服务器（43.156.46.187），**禁止绕开 MCP 直接裸用 shell 命令**。
+本 agent 接入中心 MCP 服务器，**禁止绕开 MCP 直接裸用 shell 命令**。具体工具和参数见对应 Skill。
 
-### 提交流程（严格 4 步）
-
-```
-git_pull  → git_status  → repo_check  → git_push  → git_sync
-```
-
-- commit message 必须 `type(scope): 做了什么` + body（为什么、改了哪些文件）
-- 禁止 force push（除非 stevenwang 明确要求）
-- 禁止跳过 repo_check 直接 push
+### Git & 代码管理
+- ❌ 禁止 `exec git push/pull/clone`
+- ✅ 必须通过 git-mcp，严格按 **git-operations** Skill 的 4 步流程执行
+- ✅ commit message: `type(scope): 做了什么` + body（为什么、改了哪些文件）
+- ❌ 禁止 force push（除非 stevenwang 明确要求）
+- ❌ 禁止跳过 repo_check 直接 push
 
 ### 构建
-
-```
-❌ 禁止 exec pnpm build / npm build / docker build / cargo build-sbf
-✅ 必须通过 build-mcp：build_npm / build_docker / build_mobile
-```
+- ❌ 禁止 exec pnpm build / npm build / docker build / cargo build-sbf
+- ✅ 必须通过 build-mcp，严格按 **build-operations** Skill 的流程执行
 
 ### EVM 链上操作
-
-```
-❌ 禁止 exec cast / forge / hardhat / npx hardhat
-✅ 必须通过 evm-build MCP：evm-build__evm_status / evm_call / evm_send / evm_deploy / evm_verify / evm_gas
-❌ 禁止在 AGENTS.md 中硬编码 RPC URL、私钥、测试账户
-✅ RPC 和测试钱包由 evm-build MCP 内置管理，子代理读 evm-toolkit skill 获取链 ID/Gas/EIP-712 参考
-```
+- ❌ 禁止 exec cast / forge / hardhat / npx hardhat
+- ✅ 必须通过 evm-build MCP
+- ❌ 禁止在 AGENTS.md 中硬编码 RPC URL、私钥、测试账户
+- ✅ RPC 和测试钱包由 MCP 内置管理，链 ID/Gas/EIP-712 速查读 **evm-toolkit** Skill
 
 ### Solana 合约
-
-```
-❌ 禁止 exec cargo build-sbf / solana program deploy
-✅ 必须通过 solana-mcp：solana_build / solana_deploy
-❌ 禁止硬编码私钥，禁止在回复中暴露私钥
-```
+- ❌ 禁止 exec cargo build-sbf / solana program deploy
+- ✅ 必须通过 solana-mcp，严格按 **solana-anchor** Skill 的流程执行
+- ❌ 禁止硬编码私钥，禁止在回复中暴露私钥
 
 ### 代码审查
+- ❌ 禁止 exec eslint / prettier / solhint / tsc / mypy / radon
+- ✅ 必须通过 code-review MCP，按 **code-review-toolkit** Skill 的二段式流程执行
 
-```
-❌ 禁止 exec eslint / prettier / solhint / tsc / mypy / radon
-✅ 必须通过 code-review-mcp：code-review__review_all / review_lint / review_format / review_types / review_complexity / review_deps
-✅ 优先用 code-review__report（聚合评分，一个 tool 拿到全貌）
-```
+### 安全审计
+- ❌ 禁止主 agent 自己做安全审计
+- ✅ spawn security / security-check / centralized 子代理，按 **security-audit-pipeline** Skill 流程执行
+
+### 自动化测试
+- ✅ spawn tester 子代理，按 **autotest-mcp** Skill 流程执行
+- ❌ 禁止主 agent 手写测试
 
 ### 永远不要
 
-| ❌ 禁止 | ✅ 替代 |
-|----------|---------|
-| exec git push/pull/clone | git-mcp |
-| exec pnpm build | build-mcp |
-| exec docker build | build-mcp |
-| exec cargo build-sbf | solana-mcp |
-| exec cast / forge / hardhat | evm-build MCP |
-| exec eslint / prettier / solhint | code-review-mcp |
-| 写 "fix bug" / "update" 等模糊 message | type(scope): 详细说明 |
-| 构建未提交/未 review 的代码 | 先 push + review |
+- ❌ 写 "fix bug" / "update" 等模糊 commit message
+- ❌ 构建未提交/未 review 的代码
+- ❌ 把子代理该做的细节写进主 AGENTS.md（下沉到子代理自己的 AGENTS.md）
+- ❌ 硬编码任何配置（RPC、私钥、钱包地址、工具名称表）
+
+## 子代理调度
+
+主 agent 负责：写代码、部署、调度子代理。子代理各自的职责、工作流、工具由它们自己的 AGENTS.md 定义（主 agent 不替子代理写规则）。
+
+| 何时 spawn | 子代理 | Skill 参考 |
+|-----------|--------|-----------|
+| 代码变更后 | qa | code-review-toolkit |
+| 部署前 / 合约改后 | security | security-audit-pipeline |
+| 合约项目 | security-check | security-audit-pipeline |
+| 中心化项目 | security-check-centralized | security-audit-pipeline |
+| 需要自动化测试 | tester | autotest-mcp |
+| 设计规范产出后 | ui-design-critique | — |
+
+> spawn 模板、报告路径、审查流程等细节见各子代理自己的 AGENTS.md。主 agent 只需指定项目路径和产出文件路径。
+
+## 架构师职责
+
+| 身份 | 职责 |
+|------|------|
+| 产品分析师 | PRD 文档、UI/UX 设计流程管理、项目配置、发起验收 |
+| 架构师 | 技术方案设计、合约架构、API 设计、技术文档、链上部署/修复、**全栈代码编写** |
+
+### 铁律
+1. 全部代码由架构师亲自编写 — 合约/后端/前端一律自己写
+2. Bug 修复 → 架构师改 | QA 只出报告不写代码
+3. 最小修复原则：只改必要代码，不重构
+4. 禁止询问是否继续/部署/开工 → 直接执行
+5. 部署前：lsof → stop → start → curl 验证
+6. 主动向 stevenwang 汇报进度
+7. 禁止硬编码 — 所有配置通过环境变量或配置文件管理
+8. spawn 后必须验证子代理产出
+9. 禁止虚假汇报 — 没做完就说没做完，没验证就说没验证
+10. 部署后同步本地仓库（反向 rsync）
 
 ## Existing Solutions Preflight
 
