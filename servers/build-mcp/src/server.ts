@@ -1,15 +1,3 @@
-/**
- * Build MCP Server — Universal build service
- *
- * Tools:
- *   build_npm    — npm/pnpm/yarn frontend + Node backend
- *   build_docker  — Docker image build + push
- *   build_mobile  — React Native / Flutter / Expo
- *   build_status  — build history & status
- *   build_clean   — clean old build artifacts
- *   build_disk    — workspace disk usage
- */
-
 import express from "express";
 import { loadConfig } from "./config.js";
 import { buildNpm } from "./tools/buildNpm.js";
@@ -22,150 +10,31 @@ const cfg = loadConfig();
 const app = express();
 app.use(express.json({ limit: "5mb" }));
 
-// ─── Tool Registry ────────────────────────────────
-
-const tools = {
-  build_npm: {
-    handler: async (input: any) => buildNpm(input),
-    description: "Build frontend or Node.js backend project. Clone → install → build → return artifact dist/.",
-    schema: {
-      repoUrl: "string (required) - git clone URL",
-      branch: "string - git branch (default: main)",
-      installCmd: "string - install command (default: pnpm install --frozen-lockfile)",
-      buildCmd: "string - build command (default: pnpm build)",
-      buildDir: "string - subdirectory for monorepo (default: repo root)",
-      nodeVersion: "string - node version (default: 22)",
-      env: "object - extra env vars (e.g. VITE_API_URL)",
-    },
-  },
-  build_docker: {
-    handler: async (input: any) => buildDocker(input),
-    description: "Build and optionally push Docker image. Clone → docker build → docker push.",
-    schema: {
-      repoUrl: "string (required) - git clone URL",
-      branch: "string - git branch (default: main)",
-      dockerfile: "string - Dockerfile path (default: Dockerfile)",
-      imageName: "string (required) - full image name with tag",
-      buildArgs: "object - docker build-args",
-      push: "boolean - push after build (default: true)",
-      registry: "string - key from config.registries",
-      platform: "string - target platform (default: linux/amd64)",
-    },
-  },
-  build_mobile: {
-    handler: async (input: any) => buildMobile(input),
-    description: "Build mobile app: React Native (iOS/Android), Flutter, Expo. Returns artifact paths.",
-    schema: {
-      repoUrl: "string (required) - git clone URL",
-      branch: "string - git branch (default: main)",
-      platform: "string (required) - ios | android | both",
-      framework: "string (required) - react-native | flutter | expo",
-      buildType: "string - debug | release (default: release)",
-      scheme: "string - iOS scheme name",
-      buildDir: "string - monorepo subdirectory",
-      env: "object - extra env vars (e.g. EXPO_TOKEN)",
-    },
-  },
-  build_status: {
-    handler: async (input: any) => buildStatus(input),
-    description: "Check build history and status. Filter by build ID or get recent N.",
-    schema: {
-      buildId: "string - specific build ID to query",
-      limit: "number - recent N builds (default: 30)",
-    },
-  },
-  build_clean: {
-    handler: async (input: any) => buildClean(input),
-    description: "Clean old build artifacts from workspace. By age (default: >1h) or specific build ID.",
-    schema: {
-      olderThanHours: "number - delete builds older than N hours (default: 1)",
-      buildId: "string - delete specific build",
-      type: "string - filter: npm | docker | mobile",
-    },
-  },
-  build_disk: {
-    handler: async () => buildDiskStatus(),
-    description: "Show build workspace disk usage, count, and age range.",
-    schema: {},
-  },
+const tools: Record<string, any> = {
+  build_npm:    { handler: buildNpm,    description: "Build frontend / Node.js project" },
+  build_docker: { handler: buildDocker, description: "Build Docker image" },
+  build_mobile: { handler: buildMobile, description: "Build React Native / Flutter / Expo" },
+  build_status: { handler: buildStatus, description: "Build history and status" },
+  build_clean:  { handler: buildClean,  description: "Clean old builds" },
+  build_disk:   { handler: buildDiskStatus, description: "Disk usage" },
 };
 
-// ─── Routes ──────────────────────────────────────────
-
-app.get("/tools", (_req, res) => {
-  const list = Object.entries(tools).map(([name, t]) => ({
-    name,
-    description: t.description,
-    schema: t.schema,
-  }));
-  res.json({ tools: list });
-});
-
-app.post("/tools/:name", async (req, res) => {
-  const { name } = req.params;
-  const tool = tools[name as keyof typeof tools];
-  if (!tool) {
-    res.status(404).json({ error: `Unknown tool: ${name}`, availableTools: Object.keys(tools) });
-    return;
-  }
-
-  const start = Date.now();
-  try {
-    const result = await tool.handler(req.body ?? {});
-    res.json({ ok: true, tool: name, durationMs: Date.now() - start, ...result });
-  } catch (e: any) {
-    res.status(500).json({
-      ok: false,
-      tool: name,
-      durationMs: Date.now() - start,
-      error: e.message,
-    });
-  }
-});
-
-// ─── MCP JSON-RPC (Standard Protocol) ──────────────────
-
-app.post("/mcp", async (req, res) => {
+// MCP JSON-RPC Handler
+async function mcpHandler(req: any, res: any) {
   const { jsonrpc, method, params, id } = req.body ?? {};
   const send = (r: any) => res.json({ jsonrpc: "2.0", result: r, id });
   const fail = (c: number, m: string) => res.json({ jsonrpc: "2.0", error: { code: c, message: m }, id });
+  if (method === "initialize") return send({ protocolVersion: "2024-11-05", serverInfo: { name: "build-mcp", version: "1.0" }, capabilities: { tools: {} } });
+  if (method === "tools/list") { const list = Object.entries(tools).map(([n, t]) => ({ name: n, description: (t as any).description, inputSchema: { type: "object", properties: {} } })); return send({ tools: list }); }
+  if (method === "tools/call") { const tool = tools[params?.name]; if (!tool) return fail(-32602, "Unknown tool: " + params?.name); try { const result = await tool.handler(params?.arguments ?? {}); return send({ content: [{ type: "text", text: JSON.stringify(result) }] }); } catch (e: any) { return fail(-32000, e.message); } }
+  if (method === "notifications/initialized") return res.json({ jsonrpc: "2.0", id });
+  return fail(-32601, "Unknown method: " + method);
+}
+app.post("/", mcpHandler);
+app.post("/mcp", mcpHandler);
 
-  if (method === "initialize")
-    return send({ protocolVersion: "2024-11-05", serverInfo: { name: "build-mcp", version: "1.0" }, capabilities: { tools: {} } });
-  if (method === "tools/list") {
-    const list = Object.entries(tools).map(([name, t]) => ({ name, description: t.description }));
-    return send({ tools: list });
-  }
-  if (method === "tools/call") {
-    const tool = (tools as any)[params?.name];
-    if (!tool) return fail(-32602, `Unknown tool: ${params?.name}`);
-    try {
-      const result = await tool.handler(params?.arguments ?? {});
-      return send({ content: [{ type: "text", text: JSON.stringify(result) }] });
-    } catch (e: any) { return fail(-32000, e.message); }
-  }
-  if (method === "notifications/initialized")
-    return res.json({ jsonrpc: "2.0", id });
-  return fail(-32601, `Unknown method: ${method}`);
-});
+app.get("/tools", (_req, res) => { const list = Object.entries(tools).map(([n, t]) => ({ name: n, description: (t as any).description, inputSchema: { type: "object", properties: {} } })); res.json({ tools: list }); });
+app.post("/tools/:name", async (req, res) => { const tool = tools[req.params.name]; if (!tool) { res.status(404).json({ error: "Not found" }); return; } try { const r = await tool.handler(req.body ?? {}); res.json({ ok: true, tool: req.params.name, ...r }); } catch (e: any) { res.status(500).json({ ok: false, error: e.message }); } });
+app.get("/health", (_req, res) => { res.json({ status: "ok", timestamp: new Date().toISOString(), tools: Object.keys(tools).length, buildDir: cfg.buildDir }); });
 
-app.get("/health", (_req, res) => {
-  res.json({
-    status: "ok",
-    timestamp: new Date().toISOString(),
-    tools: Object.keys(tools).length,
-    buildDir: cfg.buildDir,
-  });
-});
-
-// ─── Start ───────────────────────────────────────────
-
-app.listen(cfg.port, cfg.host, () => {
-  console.log(`🔧 Build MCP v0.1.0 — http://${cfg.host}:${cfg.port}`);
-  console.log(`   GET  /tools                   — list tools`);
-  console.log(`   POST /tools/build_npm         — frontend / Node.js`);
-  console.log(`   POST /tools/build_docker      — Docker image`);
-  console.log(`   POST /tools/build_mobile      — React Native / Flutter / Expo`);
-  console.log(`   POST /tools/build_status      — build history`);
-  console.log(`   Build workspace: ${cfg.buildDir}`);
-});
+app.listen(cfg.port, cfg.host, () => { console.log(`build-mcp on http://${cfg.host}:${cfg.port}`); });
