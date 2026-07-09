@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Code Review MCP Server v3.3 — local filesystem mode + REST API + aggregated report
+Code Review MCP Server v3.3.1 — local filesystem mode + REST API + aggregated report
 Deploy on central MCP server. All team code lives on this server (git-managed).
 Review runs locally over /opt/mcp/repos/<team>/.
 
@@ -107,7 +107,9 @@ def review_lint(project_path: str, language: str) -> dict:
         "project": project_path,
         "language": language,
         "summary": f"{len(results)} issues ({p0} P0, {p1} P1)",
-        "results": results
+        "p0_count": p0,
+        "p1_count": p1,
+        "issues": results
     }
 
 
@@ -157,14 +159,14 @@ def review_types(project_path: str, language: str) -> dict:
             line = line.strip()
             if line and "error TS" in line:
                 issues.append(line)
-        results.append({"tool": "tsc", "language": "js-ts", "ok": rc == 0, "issueCount": len(issues), "issues": issues[:20], "severity": "P0" if rc != 0 else "P0"})
+        results.append({"tool": "tsc", "language": "js-ts", "ok": rc == 0, "issueCount": len(issues), "issues": issues[:20], "severity": "P1" if rc != 0 else "P0"})
 
     if language in ("python", "all"):
         py_files = find_files(project_path, ['.py'])
         if py_files:
             rc, out, err = run(["mypy"] + py_files, timeout=60)
             issues = [l.strip() for l in (out + "\n" + err).split("\n") if l.strip()]
-            results.append({"tool": "mypy", "language": "python", "ok": rc == 0, "issueCount": len(issues), "issues": issues[:20], "severity": "P0" if rc != 0 else "P0"})
+            results.append({"tool": "mypy", "language": "python", "ok": rc == 0, "issueCount": len(issues), "issues": issues[:20], "severity": "P1" if rc != 0 else "P0"})
 
     p0 = sum(1 for r in results if r["severity"] == "P0" and not r["ok"])
     return {
@@ -370,7 +372,7 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/health":
-            self._json(200, {"status": "ok", "version": "3.3.0", "mode": "local"})
+            self._json(200, {"status": "ok", "version": "3.3.1", "mode": "local"})
         elif parsed.path == "/api/tools":
             tools_list = [{"name": n, "description": s["description"]} for n, s in TOOLS.items()]
             self._json(200, {"tools": tools_list})
@@ -428,7 +430,7 @@ class MCPHandler(http.server.BaseHTTPRequestHandler):
                 "result": {
                     "protocolVersion": "2025-06-18",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "code-review-mcp", "version": "3.3.0"}
+                    "serverInfo": {"name": "code-review-mcp", "version": "3.3.1"}
                 }
             })
         elif method == "tools/list":
@@ -466,10 +468,11 @@ def _build_report(project_path, review_result):
         total_p1 += p1
 
         # collect top issues
-        issues = r.get("issues", []) if isinstance(r, dict) else []
+        issues = r.get("issues", r.get("results", [])) if isinstance(r, dict) else []
         for issue in issues:
             sev = issue.get("severity", "").upper() if isinstance(issue, dict) else ""
-            if sev in ("P0", "P1", "ERROR"):
+            ok = issue.get("ok", True) if isinstance(issue, dict) else True
+            if sev in ("P0", "P1", "ERROR") and not (ok and sev == "P0"):
                 top_issues.append({
                     "tool": tool_name,
                     "severity": sev,
