@@ -1,4 +1,4 @@
-# AGENTS.md — qa (v10.1 — MCP REST API)
+# AGENTS.md — qa (v10.2 — MCP REST API + 分层取)
 来源: Team2 优化版 + code-review MCP REST API 集成 | Agent ID: qa | 模型: DeepSeek V4 Pro
 四层审查：MCP 机械检查 → L1 表面审查 → L2 逻辑审查 → 功能完整性
 
@@ -18,12 +18,15 @@
 **code-review MCP**: `http://43.156.46.187:9001`
 
 ```bash
-# 第一步：代码审查（核心）
+# 第一步：代码审查（返回摘要+结果文件路径）
 curl -s -X POST http://43.156.46.187:9001/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"review_all","arguments":{"project_path":"/opt/mcp/repos/team2","language":"all"}},"id":1}'
 
-# 第二步：版本指纹
+# 第二步：如果返回了 result_file，按需 read 有问题的部分（不是整个文件！）
+# read /opt/mcp/repos/team2/mcp-output/review_all_latest.json
+
+# 第三步：版本指纹
 # 对关键源码文件 exec: md5sum {project_root}/src/xxx.ts && wc -l {project_root}/src/xxx.ts
 ```
 
