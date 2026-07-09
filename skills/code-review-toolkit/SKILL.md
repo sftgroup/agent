@@ -34,15 +34,36 @@ code-review-mcp: review_all("/opt/mcp/repos/team3", "all")
 
 code-review **不负责**：构建（build-mcp 的事）、发布（git-sync 的事）、安全检查（security 子代理的事）。
 
+## 版本锁定
+
+所有工具版本固定，防止自动升级导致行为不一致。升级需同时更新此表 + `scripts/install-linters.sh`。
+
+| Tool | Version | Installed via |
+|------|---------|---------------|
+| eslint | 10.6.0 | npm |
+| prettier | 3.9.5 | npm |
+| typescript (tsc) | 7.0.2 | npm |
+| solhint | 6.2.3 | npm |
+| ruff | 0.15.20 | pip |
+| black | 26.5.1 | pip |
+| mypy | 2.2.0 | pip |
+| radon | 6.0.1 | pip |
+| pip-audit | 2.10.1 | pip |
+| shellcheck | 0.9.0 | apt |
+| shfmt | 3.12.0 | snap |
+| forge | 1.7.1 | foundryup (stable) |
+| node | 22.x | nodesource |
+| python | 3.12.x | system |
+
 ## Tool Matrix
 
 | Layer | Solidity | JS/TS | Python | Shell |
 |-------|----------|-------|--------|-------|
-| Lint | solhint | ESLint | Ruff | shellcheck |
-| Format | forge fmt | Prettier | Black | shfmt |
-| Types | — | tsc --noEmit | mypy | — |
-| Complexity | — | eslint rules | radon | — |
-| Deps | — | npm audit | pip-audit | — |
+| Lint | solhint 6.2.3 | ESLint 10.6.0 | Ruff 0.15.20 | shellcheck |
+| Format | forge fmt 1.7.1 | Prettier 3.9.5 | Black 26.5.1 | shfmt 3.12.0 |
+| Types | — | tsc 7.0.2 | mypy 2.2.0 | — |
+| Complexity | — | eslint rules | radon 6.0.1 | — |
+| Deps | — | npm audit | pip-audit 2.10.1 | — |
 
 ## MCP Tools
 
