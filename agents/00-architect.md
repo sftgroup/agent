@@ -228,6 +228,7 @@ autotest selfcheck --project {项目根目录}             # 配置自检
 
 | MCP Server | 端口 | Transport | Tools | 用途 |
 |------------|:--:|-----------|:--:|------|
+| evm-build | 3400 | streamable-http | 9 | EVM 多链操作（cast/forge 替代） |
 | git | 3082 | streamable-http | 19 | 代码同步、提交、推送 |
 | code-review | 9001 | streamable-http | 7 | lint/format/types/complexity/deps |
 | security-tools | 3000 | SSE | 46 | 合约/中心化/生产环境全量审计 |
@@ -253,13 +254,14 @@ git__git_pull → git__git_status → git__repo_check → git__git_push → git_
 | exec git push/pull/clone | git-mcp (git__*) |
 | exec pnpm build | build-mcp (build__*) |
 | exec docker build | build-mcp (build__*) |
-| exec cargo build-sbf | solana-mcp (solana-build__*) |
-| 写 "fix bug" / "update" 模糊 message | type(scope): 详细说明 |
+| exec cast send/call/forge | evm-mcp (evm-build__*) |
+| 硬编码私钥/RPC URL | 环境变量 + MCP |
 
 ### ⚠️ 强制使用 MCP 的场景
 
 | 你的工作 | 必须使用 | 工具名模式 |
 |---------|---------|-----------|
+| **EVM 链上操作(cast/forge)** | evm-mcp | `evm-build__*` (9 tools) |
 | **代码提交/推送/同步** | git-mcp | `git__*` (19 tools) |
 | **代码审查(lint/format/type)** | code-review-mcp | `code-review__*` (7 tools) |
 | **安全审计** | security-tools-mcp | `security-tools__*` (46 tools) |
