@@ -139,7 +139,6 @@ api_post(url=".../api/submit", body="...", use_auth="test")
 | 浏览器 | `browser_page_check` `browser_user_flow` `visual_regression` |
 | API | `api_e2e_test` `api_get` `api_post` `api_fuzz_test` `api_load_test` |
 | DApp | `dapp_tx_and_ui_check` `dapp_wallet_connect_flow` `dapp_swap_flow` |
-| 安全 | `security_scan` `perf_audit_page` `sql_quality_check` |
 
 完整列表：agent 可调 `tools/list` 查看。
 
