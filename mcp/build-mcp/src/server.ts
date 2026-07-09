@@ -6,6 +6,8 @@
  *   build_docker  — Docker image build + push
  *   build_mobile  — React Native / Flutter / Expo
  *   build_status  — build history & status
+ *   build_clean   — clean old build artifacts
+ *   build_disk    — workspace disk usage
  */
 
 import express from "express";
@@ -14,6 +16,7 @@ import { buildNpm } from "./tools/buildNpm.js";
 import { buildDocker } from "./tools/buildDocker.js";
 import { buildMobile } from "./tools/buildMobile.js";
 import { buildStatus } from "./tools/status.js";
+import { buildClean, buildDiskStatus } from "./tools/clean.js";
 
 const cfg = loadConfig();
 const app = express();
@@ -70,6 +73,20 @@ const tools = {
       buildId: "string - specific build ID to query",
       limit: "number - recent N builds (default: 30)",
     },
+  },
+  build_clean: {
+    handler: async (input: any) => buildClean(input),
+    description: "Clean old build artifacts from workspace. By age (default: >1h) or specific build ID.",
+    schema: {
+      olderThanHours: "number - delete builds older than N hours (default: 1)",
+      buildId: "string - delete specific build",
+      type: "string - filter: npm | docker | mobile",
+    },
+  },
+  build_disk: {
+    handler: async () => buildDiskStatus(),
+    description: "Show build workspace disk usage, count, and age range.",
+    schema: {},
   },
 };
 
