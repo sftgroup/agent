@@ -1,117 +1,125 @@
-#!/usr/bin/env bash
-# OpenClaw Instance Doctor — 8-dimension diagnostic script
-# Focus: cache-hit chain + session mgmt + disk + browser + Gateway health
-# Usage: sshpass -p '<PASS>' ssh ubuntu@<IP> 'bash -s' < diagnose.sh
+#!/bin/bash
+# === OpenClaw Instance Doctor — 一键诊断 v1.0 ===
+# 用法: bash diagnose.sh
+# 在每台 OpenClaw 实例机器上运行，把输出发回给 stevenwang/team3
 
-echo '========================================'
-echo '  诊断报告: ' && hostname
-echo '========================================'
+HOST=$(hostname)
+IP=$(hostname -I | awk '{print $1}')
+echo "=========================================="
+echo "  OpenClaw Instance Doctor — 诊断报告"
+echo "  hostname: $HOST | IP: $IP"
+echo "  date: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+echo "=========================================="
+echo ""
 
-echo '--- 1. 基础信息 ---'
-echo -n 'Hostname: ' && hostname
-echo -n 'OpenClaw: ' && openclaw --version 2>/dev/null || echo 'NOT FOUND'
-ps aux | grep '[o]penclaw' | grep -v chrome | awk '{print "PID:",$2,"CMD:",$11,$12,$13}'
-ss -tlnp 2>/dev/null | grep node | head -3
-df -h / | tail -1
-uptime
+# 找 openclaw.json
+OC_JSON=""
+for p in /root/.openclaw/openclaw.json /home/*/openclaw/openclaw.json ~/.openclaw/openclaw.json; do
+  [ -f "$p" ] && OC_JSON="$p" && break
+done
 
-echo '--- 2. 主 AGENTS.md ---'
-if [ -f ~/.openclaw/workspace/AGENTS.md ]; then
-  head -1 ~/.openclaw/workspace/AGENTS.md
-  echo "行数: $(wc -l < ~/.openclaw/workspace/AGENTS.md)"
-else
-  echo '❌ MISSING'
+if [ -z "$OC_JSON" ]; then
+  echo "❌ openclaw.json 未找到"
+  exit 1
 fi
+echo "📄 openclaw.json: $OC_JSON"
+echo ""
 
-echo '--- 3. 子 Agent 清单 (9个) ---'
-AGENTS_OK=0; AGENTS_FAIL=0
-for d in qa security security-check security-check-centralized tester \
-  ui-design-critique ux-researcher design-advisor ui-designer; do
-  f=$(find ~/.openclaw/workspace -maxdepth 3 -path "*/$d/AGENTS.md" ! -path "*node_modules*" 2>/dev/null | head -1)
-  if [ -f "$f" ]; then
-    echo "✅ $d: $(wc -l < "$f")L"; AGENTS_OK=$((AGENTS_OK+1))
-  else
-    echo "❌ $d: MISSING"; AGENTS_FAIL=$((AGENTS_FAIL+1))
-  fi
-done
-echo "合计: $AGENTS_OK 存在, $AGENTS_FAIL 缺失"
+# --- 1. OpenClaw 版本 ---
+echo "--- [1] OpenClaw Version ---"
+openclaw --version 2>/dev/null || echo "❌ openclaw CLI 不可用"
+echo ""
 
-echo '--- 4. 旧版残留 ---'
-[ -d ~/.openclaw/workspaces ] && echo '❌ workspaces/ 存在 (旧版, 应清理)' || echo '✅ 无 workspaces/'
-[ -d ~/.openclaw/agents ] && echo '✅ agents/ 存在 (运行时存储)' || echo '⚠️  agents/ 不存在'
+# --- 2. cacheRetention ---
+echo "--- [2] cacheRetention ---"
+VAL=$(python3 -c "import json;c=json.load(open('$OC_JSON'));print(c.get('cacheRetention','NOT SET'))" 2>/dev/null || echo "PARSE ERROR")
+if [ "$VAL" = "long" ]; then echo "✅ $VAL"; elif [ "$VAL" = "NOT SET" ]; then echo "🔴 NOT SET (需要设为 'long')"; else echo "⚠️ $VAL"; fi
+echo ""
 
-echo '--- 5. Config ---'
-python3 << 'PYEOF'
-import json, os
-c = json.load(open(os.path.expanduser('~/.openclaw/openclaw.json')))
-print('gateway.bind:', c.get('gateway',{}).get('bind','?'))
-d = c.get('agents',{}).get('defaults',{})
-print('contextInjection:', d.get('contextInjection','?'))
-print('skipOptional:', d.get('skipOptionalBootstrapFiles','?'))
-print('bootstrapMaxChars:', d.get('bootstrapMaxChars','?'))
-print('bootstrapTotalMaxChars:', d.get('bootstrapTotalMaxChars','?'))
-print('compaction:', json.dumps(d.get('compaction',{})))
-print('cacheRetention:', d.get('params',{}).get('cacheRetention','NOT SET'))
-print('heartbeat:', json.dumps(d.get('heartbeat',{})))
-print('contextPruning:', json.dumps(d.get('contextPruning',{})))
-print('model:', d.get('model',{}).get('primary','?'))
-print('Agents count:', len(c.get('agents',{}).get('list',[])))
-print('Agents:', [a['id'] for a in c.get('agents',{}).get('list',[])])
-ds = c.get('models',{}).get('providers',{}).get('deepseek',{})
-print('DeepSeek timeout:', ds.get('timeoutSeconds','?'))
-s = c.get('session',{})
-print('session.reset:', json.dumps(s.get('reset',{})))
-print('session.maintenance:', json.dumps(s.get('maintenance',{})))
-PYEOF
+# --- 3. heartbeat ---
+echo "--- [3] heartbeat ---"
+VAL=$(python3 -c "import json;c=json.load(open('$OC_JSON'));h=c.get('heartbeat',{});print(h.get('every','NOT SET'))" 2>/dev/null || echo "PARSE ERROR")
+if [ "$VAL" = "55m" ]; then echo "✅ $VAL"; elif [ "$VAL" = "NOT SET" ]; then echo "🔴 NOT SET (需要设为 '55m')"; else echo "⚠️ $VAL (期望 55m)"; fi
+echo ""
 
-echo '--- 6. Cache Hit Chain ---'
-python3 << 'PYEOF'
-import json, os
-c = json.load(open(os.path.expanduser('~/.openclaw/openclaw.json')))
-d = c.get('agents',{}).get('defaults',{})
+# --- 4. contextPruning ---
+echo "--- [4] contextPruning ---"
+MOD=$(python3 -c "import json;c=json.load(open('$OC_JSON'));p=c.get('contextPruning',{});print(p.get('mode','NOT SET'))" 2>/dev/null || echo "PARSE ERROR")
+TTL=$(python3 -c "import json;c=json.load(open('$OC_JSON'));p=c.get('contextPruning',{});print(p.get('ttl','NOT SET'))" 2>/dev/null || echo "PARSE ERROR")
+if [ "$MOD" = "cache-ttl" ] && [ "$TTL" = "1h" ]; then echo "✅ mode=$MOD, ttl=$TTL"; elif [ "$MOD" = "NOT SET" ]; then echo "🔴 NOT SET (需要 mode=cache-ttl, ttl=1h)"; else echo "⚠️ mode=$MOD, ttl=$TTL (期望 cache-ttl + 1h)"; fi
+echo ""
 
-checks = []
-ci = d.get('contextInjection') == 'always'
-checks.append(('stable prefix (contextInjection=always)', ci))
-cr = d.get('params',{}).get('cacheRetention') == 'long'
-checks.append(('cacheRetention=long', cr))
-hb = bool(d.get('heartbeat',{}).get('every'))
-checks.append(('heartbeat keep-warm', hb))
-cp = d.get('contextPruning',{}).get('mode') == 'cache-ttl'
-checks.append(('contextPruning=cache-ttl', cp))
-bt = d.get('bootstrapTotalMaxChars', 0) >= 50000
-checks.append(('bootstrapTotalMaxChars>=50000', bt))
-so = 'HEARTBEAT.md' in d.get('skipOptionalBootstrapFiles', [])
-checks.append(('skipOptional covers HEARTBEAT.md', so))
-comp = d.get('compaction',{})
-cc = comp.get('reserveTokens') == 12000 and comp.get('keepRecentTokens') == 20000
-checks.append(('compaction baseline (12K/20K)', cc))
+# --- 5. contextInjection ---
+echo "--- [5] contextInjection ---"
+VAL=$(python3 -c "import json;c=json.load(open('$OC_JSON'));print(c.get('contextInjection','NOT SET'))" 2>/dev/null || echo "PARSE ERROR")
+if [ "$VAL" = "always" ]; then echo "✅ $VAL"; elif [ "$VAL" = "NOT SET" ]; then echo "🔴 NOT SET (需要设为 'always')"; else echo "⚠️ $VAL"; fi
+echo ""
 
-for name, ok in checks:
-    print(f"  {'✅' if ok else '❌'} {name}")
+# --- 6. bootstrapMaxChars & bootstrapTotalMaxChars ---
+echo "--- [6] bootstrapMaxChars / bootstrapTotalMaxChars ---"
+MAX=$(python3 -c "import json;c=json.load(open('$OC_JSON'));print(c.get('bootstrapMaxChars','NOT SET'))" 2>/dev/null || echo "PARSE ERROR")
+TOT=$(python3 -c "import json;c=json.load(open('$OC_JSON'));print(c.get('bootstrapTotalMaxChars','NOT SET'))" 2>/dev/null || echo "PARSE ERROR")
+S1=""; S2=""
+[ "$MAX" = "20000" ] && S1="✅ bootstrapMaxChars=$MAX" || S1="⚠️ bootstrapMaxChars=$MAX (期望 20000)"
+[ "$TOT" = "50000" ] && S2="✅ bootstrapTotalMaxChars=$TOT" || S2="⚠️ bootstrapTotalMaxChars=$TOT (期望 50000)"
+echo "  $S1"
+echo "  $S2"
+echo ""
 
-score = sum(1 for _, ok in checks if ok)
-print(f'\n缓存命中链完整度: {score}/{len(checks)}')
-PYEOF
+# --- 7. skipOptionalBootstrapFiles ---
+echo "--- [7] skipOptionalBootstrapFiles ---"
+FILES=$(python3 -c "import json;c=json.load(open('$OC_JSON'));sk=c.get('skipOptionalBootstrapFiles',[]);print(', '.join(sk))" 2>/dev/null || echo "PARSE ERROR")
+HAS_SOUL=$(echo "$FILES" | grep -c "SOUL" || true)
+HAS_HEART=$(echo "$FILES" | grep -c "HEARTBEAT" || true)
+HAS_ID=$(echo "$FILES" | grep -c "IDENTITY" || true)
+HAS_USR=$(echo "$FILES" | grep -c "USER" || true)
+echo "  SOUL.md=$HAS_SOUL HEARTBEAT.md=$HAS_HEART IDENTITY.md=$HAS_ID USER.md=$HAS_USR"
+if [ $HAS_SOUL -ge 1 ] && [ $HAS_HEART -ge 1 ]; then echo "  ✅ 关键文件已屏蔽"; else echo "  ⚠️ 建议屏蔽 SOUL.md + HEARTBEAT.md"; fi
+echo ""
 
-echo '--- 7. 浏览器清理 ---'
-BROWSER_OK=0
-for f in chrome-cleanup.sh kill-idle-browser.sh; do
-  for d in ~/scripts ~/.openclaw/scripts; do
-    if [ -f "$d/$f" ]; then echo "✅ $d/$f"; BROWSER_OK=$((BROWSER_OK+1)); fi
-  done
-done
-[ $BROWSER_OK -eq 0 ] && echo '❌ 无浏览器清理脚本'
-crontab -l 2>/dev/null | grep -i chrome && echo '✅ chrome crontab 已配置' || echo '❌ 无 Chrome 清理 crontab'
+# --- 8. MCP Servers ---
+echo "--- [8] MCP Servers ---"
+python3 -c "
+import json
+c = json.load(open('$OC_JSON'))
+servers = c.get('mcp', {}).get('servers', {})
+for name, cfg in servers.items():
+    url = cfg.get('url', cfg) if isinstance(cfg, dict) else str(cfg)
+    print(f'  {name}: {url}')
+print(f'  Total: {len(servers)} servers')
+" 2>/dev/null || echo "❌ 无法解析 MCP"
+echo ""
 
-echo '--- 8. 磁盘 ---'
-df -h / | tail -1
-echo ''
-echo '大目录 TOP 8:'
-du -sh /home/ubuntu/*/ /home/ubuntu/.*/ 2>/dev/null | sort -rh | head -8
-echo ''
-echo '缓存详情:'
-for d in /home/ubuntu/.npm /home/ubuntu/.cache /home/ubuntu/.local/share/pnpm /tmp; do
-  echo -n "  $d: " && du -sh "$d" 2>/dev/null || echo '(none)'
-done
-journalctl --disk-usage 2>/dev/null | xargs -I{} echo "  journal: {}"
+# --- 9. Agents ---
+echo "--- [9] Agents ---"
+python3 -c "
+import json
+c = json.load(open('$OC_JSON'))
+agents = c.get('agents', {}).get('list', [])
+for a in agents:
+    m = a.get('model', {})
+    model = m.get('primary', '') if isinstance(m, dict) else str(m)
+    print(f'  {a[\"id\"]}: {model}')
+print(f'  Total: {len(agents)} agents')
+" 2>/dev/null || echo "❌ 无法解析 agents"
+echo ""
+
+# --- 10. 磁盘 ---
+echo "--- [10] Disk ---"
+df -h /
+echo ""
+
+# --- 11. 内存 ---
+echo "--- [11] Memory ---"
+free -h | head -2
+echo ""
+
+# --- 12. 运行中的 OpenClaw ---
+echo "--- [12] OpenClaw Process ---"
+ps aux | grep -i "[o]penclaw" | awk '{printf "  PID=%s CPU=%s MEM=%s CMD=%s\n",$2,$3,$4,$11}' || echo "  ⏹️ 未运行"
+echo ""
+
+# --- 总结 ---
+echo "=========================================="
+echo "  诊断完成"
+echo "=========================================="
