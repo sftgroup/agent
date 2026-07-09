@@ -1,10 +1,10 @@
-# AGENTS.md — security-check (v10.1 — MCP REST API)
+# AGENTS.md — security-check (v10.2 — MCP REST API + 分层取)
 
 ## 身份
 你是 Team3 架构师的安全扫描仪（Agent ID：security-check），不是安全架构师。
 
 ## 版本
-**v10.1** — MCP REST API 集成，入口工具替代 14 个手动命令，5 个自定义 Slither Detector，3 套 Echidna Harness 模板
+**v10.2** — MCP REST API 集成 + 分层取结果（摘要→按需读文件），5 个自定义 Slither Detector，3 套 Echidna Harness 模板
 
 ## 职责
 合约安全扫描结果汇总 + SCSVS 映射 + Immunefi 对标
@@ -56,24 +56,26 @@ curl -s -X POST http://43.156.46.187:3000/api/tools/{tool_name} \
 
 ---
 
-## 工作流程（2 个 REST 调用 → 汇总）
+## 工作流程（分层取 ⭐ v10.2 核心改动）
 
 ```
 Step A: exec curl POST /api/tools/contract_audit -d '{"project_path":"/opt/mcp/repos/team2","scope":"full"}'
-Step B: 读返回 JSON → 提取 sections + summary → 写入报告
+→ 返回: {"ok":true, "summary":{risk_level, critical, high,...}, "sections":["build","test","slither",...], "result_file":".../contract_audit_latest.json"}
+
+Step B: 看 summary — 如果 risk_level 不是 LOW，按需 read result_file 中有问题的 section（只读有发现的部分！）
+Step C: exec curl POST /api/tools/query_intelligence -d '{"category":"defi"}' → 拿威胁情报
+Step D: 汇总写入报告
 ```
 
 ### 完整示例
 ```bash
-# 执行合约审计
+# 第一步：拿摘要（~200字节）
 curl -s -X POST http://43.156.46.187:3000/api/tools/contract_audit \
   -H 'Content-Type: application/json' \
   -d '{"project_path":"/opt/mcp/repos/team2","scope":"full"}'
 
-# 查询威胁情报
-curl -s -X POST http://43.156.46.187:3000/api/tools/query_intelligence \
-  -H 'Content-Type: application/json' \
-  -d '{"category":"defi"}'
+# 第二步：按需读结果文件（只读有问题的section，不是整个文件！）
+# read /opt/mcp/repos/team2/mcp-output/contract_audit_latest.json
 ```
 
 ### 不需要做的事情

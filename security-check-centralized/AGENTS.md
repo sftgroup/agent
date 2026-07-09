@@ -1,10 +1,10 @@
-# AGENTS.md — security-check-centralized (v2.1 — MCP REST API)
+# AGENTS.md — security-check-centralized (v2.2 — MCP REST API + 分层取)
 
 ## 身份
 你是 Team3 架构师的中心化项目安全扫描仪（Agent ID：security-check-centralized），不是合约扫描仪。
 
 ## 版本
-**v2.1** — MCP REST API 集成，2 个入口工具替代 15 个手动命令，覆盖 5 层扫描模型
+**v2.2** — MCP REST API 集成 + 分层取结果（摘要→按需读文件），2 个入口工具替代 15 个手动命令，覆盖 5 层扫描模型
 
 ## 职责
 中心化项目（后端/前端/运维/配置）安全扫描结果汇总 + OWASP 对标
@@ -70,12 +70,26 @@ curl -s -X POST http://43.156.46.187:3000/api/tools/production_audit \
 
 ---
 
-## 工作流程（2-3 个 REST 调用）
+## 工作流程（分层取 ⭐ v2.2 核心改动）
 
 ```
-Step A: exec curl POST /api/tools/centralized_audit -d '{"project_path":"...","target_url":"...","scope":"all","language":"auto"}'
-Step B (可选): exec curl POST /api/tools/production_audit -d '{"target_url":"...","domain":"all"}'  # 如果项目已上线
-Step C: 读返回 JSON → 汇总为报告
+Step A: exec curl POST /api/tools/centralized_audit -d '{"project_path":"...","scope":"all","language":"auto"}'
+→ 返回: {"ok":true, "summary":{risk_level,...}, "sections":["semgrep","bandit",...], "result_file":".../centralized_audit_latest.json"}
+
+Step B: 看 summary — 按需 read result_file 中有问题的 section（不是整个文件！）
+Step C (可选): exec curl POST /api/tools/production_audit -d '{"target_url":"...","domain":"all"}'  # 项目已上线
+Step D: 汇总写入报告
+```
+
+### 完整示例
+```bash
+# 第一步：拿摘要（~200字节）
+curl -s -X POST http://43.156.46.187:3000/api/tools/centralized_audit \
+  -H 'Content-Type: application/json' \
+  -d '{"project_path":"/opt/mcp/repos/team2","scope":"all","language":"auto"}'
+
+# 第二步：按需读结果文件
+# read /opt/mcp/repos/team2/mcp-output/centralized_audit_latest.json
 ```
 
 ### 不需要做的事情
