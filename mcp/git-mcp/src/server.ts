@@ -25,7 +25,7 @@ import {
   apiClone, apiPull, apiPush, apiStatus,
   apiCreateTag, apiListTags,
   apiLog, apiLogAudit, apiCheckout, apiCheck,
-  apiSync, apiSyncStatus
+  apiSync, apiSyncStatus, apiSyncCode, apiSnapshot
 } from "./tools/gitOps.js";
 
 const cfg = loadConfig();
@@ -126,6 +126,20 @@ const tools: Record<string, { handler: (input: any) => Promise<any>; description
     handler: apiSyncStatus,
     description: "Check which repos have unsynced local commits not yet pushed to GitHub.",
     schema: { name: "string — specific repo, or omit for all repos" },
+  },
+  repo_sync: {
+    handler: apiSyncCode,
+    description: "Sync code from a test/team server to MCP. Returns snapshot SHA for code review traceability.",
+    schema: {
+      team: "string (required) — team identifier (e.g. team3)",
+      source_host: "string (required) — server IP",
+      source_path: "string (required) — absolute path on source",
+    },
+  },
+  repo_snapshot: {
+    handler: apiSnapshot,
+    description: "Get current snapshot SHA for a team without re-syncing. Use for code review report traceability.",
+    schema: { team: "string (required) — team identifier" },
   },
 };
 

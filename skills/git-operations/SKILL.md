@@ -14,8 +14,12 @@ metadata: { "openclaw": { "os": ["linux"] } }
 ## Architecture
 
 ```
-agent → git_push → MCP local repo (incremental, never overwrites)
-agent → git_sync → GitHub (deliberate push)
+agent → git_push   → MCP local repo (incremental, never overwrites)
+agent → git_sync   → GitHub (deliberate push)
+agent → repo_sync  → MCP local (rsync from test servers, returns SHA)
+agent → repo_snapshot → get SHA for code review traceability
+
+code-review-mcp → reads /opt/mcp/repos/<team>/ → reports tagged with SHA
 ```
 
 Every `git_push` creates a commit in the MCP's local repository. These accumulate as a permanent audit trail.
@@ -30,6 +34,8 @@ Only `git_sync` actually pushes to GitHub. This separation prevents accidental o
 | Check what's not synced | `git_sync_status` | Show unsynced commits per repo |
 | Need latest code (from GitHub) | `git_pull` | Pull from GitHub to MCP local |
 | Want to clone a repo | `git_clone` | Clone from GitHub to MCP local |
+| Sync test server code | `repo_sync` | rsync from server to MCP, returns SHA for review |
+| Get snapshot SHA | `repo_snapshot` | Get current SHA without re-syncing, for review traceability |
 | Want to see what changed | `git_status` | Shows staged/unstaged/untracked + unsynced count |
 | Need a version tag | `git_create_tag` | Creates annotated tag + pushes |
 | Checking version history | `git_tags` | Lists all tags for the repo |
@@ -74,6 +80,29 @@ POST /tools/git_sync_status  {}
 ```
 
 `git_sync_status` without `name` checks ALL repos — useful for periodic audits.
+
+## Test Server Sync & Code Review
+
+When code lives on a test/team server (not GitHub):
+
+```
+# Step 1: Sync code from test server to MCP
+POST /tools/repo_sync  {"team": "team3", "source_host": "43.156.50.6", "source_path": "/home/ubuntu/.openclaw/workspace/team3"}
+→ { team: "team3", sha: "abc123", status: "synced", fileCount: 42, ... }
+
+# Step 2: Run code review (mechanical)
+POST http://43.156.46.187:9001/mcp/tools/review_all
+  { "project_path": "/opt/mcp/repos/team3", "language": "all" }
+→ Report tagged with snapshot_sha: "abc123"
+
+# Step 3: Get SHA without re-syncing (e.g. for audit report)
+POST /tools/repo_snapshot  {"team": "team3"}
+→ { team: "team3", sha: "abc123", ... }
+```
+
+**Traceability rule:** Every code review report must include `snapshot_sha`.
+This ensures ""this report reviewed commit abc123"" — mechanical lint, AI review,
+and security audit all reference the same code version.
 
 ## Pull Workflow
 

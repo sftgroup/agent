@@ -525,3 +525,109 @@ export async function apiCheck(input: { name: string; branch?: string }) {
 
   return { passed: allPassed, checks: results };
 }
+
+// ─── Code Sync (test server → MCP local) ─────────────
+// Agent-initiated, NOT automatic. Uses rsync over SSH.
+// Excludes: node_modules, .git, venv, __pycache__, dist, build, .next, target
+
+const RSYNC_EXCLUDES = [
+  "node_modules/", ".git/", "venv/", ".venv/", "__pycache__/",
+  "dist/", "build/", ".next/", "target/", "*.pyc", ".DS_Store"
+];
+
+export async function apiSyncCode(input: {
+  team: string; source_host: string; source_path: string;
+}) {
+  const team = input.team;
+  const destPath = join(cfg.repoBasePath, team);
+
+  // Ensure destination exists
+  mkdirSync(destPath, { recursive: true });
+
+  // Build rsync command
+  const excludes = RSYNC_EXCLUDES.map(e => `--exclude='${e}'`).join(" ");
+  const cmd = `rsync -az --delete ${excludes} ${input.source_host}:${input.source_path}/ ${destPath}/`;
+
+  let stdout: string;
+  try {
+    stdout = execSync(cmd, { timeout: 120_000, maxBuffer: 2 * 1024 * 1024 }).toString().trim();
+  } catch (e: any) {
+    throw new Error(`rsync failed: ${e.stderr?.toString() ?? e.message}`.substring(0, 500));
+  }
+
+  // Count files synced
+  const fileCount = parseInt(
+    execSync(`find ${destPath} -type f | wc -l`, { timeout: 5000 }).toString().trim()
+  ) || 0;
+
+  const totalBytes = parseInt(
+    execSync(`du -sb ${destPath} | cut -f1`, { timeout: 5000 }).toString().trim()
+  ) || 0;
+
+  // Compute snapshot SHA
+  let sha: string;
+  if (existsSync(join(destPath, ".git"))) {
+    sha = gitOptional(destPath, "rev-parse HEAD");
+  } else {
+    // No git — hash the file tree
+    sha = execSync(
+      `find ${destPath} -type f -exec sha256sum {} \\; | sort -k2 | sha256sum | cut -d' ' -f1`,
+      { timeout: 30000 }
+    ).toString().trim();
+  }
+
+  logAudit(team, "repo_sync", {
+    branch: input.source_host,
+    commitSha: sha,
+    message: `Synced from ${input.source_host}:${input.source_path}, ${fileCount} files, ${(totalBytes/1024/1024).toFixed(1)}MB`,
+    status: "ok",
+  });
+
+  return {
+    team,
+    status: "synced",
+    sha,
+    fileCount,
+    bytes: totalBytes,
+    path: destPath,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// ─── Snapshot (get SHA without re-syncing) ────────────
+
+export async function apiSnapshot(input: { team: string }) {
+  const destPath = join(cfg.repoBasePath, input.team);
+
+  if (!existsSync(destPath)) {
+    throw new Error(`Team "${input.team}" not synced. Run repo_sync first.`);
+  }
+
+  let sha: string;
+  let source = "unknown";
+
+  if (existsSync(join(destPath, ".git"))) {
+    sha = git(destPath, "rev-parse HEAD");
+
+    // Try to get last commit info
+    const lastCommit = gitOptional(destPath, "log -1 --format='%H %s %ai'");
+    if (lastCommit) {
+      const parts = lastCommit.split(" ");
+      source = "git";
+    }
+  } else {
+    sha = execSync(
+      `find ${destPath} -type f -exec sha256sum {} \\; | sort -k2 | sha256sum | cut -d' ' -f1`,
+      { timeout: 30000 }
+    ).toString().trim();
+    source = "file-tree";
+  }
+
+  return {
+    team: input.team,
+    sha,
+    source,
+    path: destPath,
+    timestamp: new Date().toISOString(),
+  };
+}
