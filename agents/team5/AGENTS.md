@@ -92,6 +92,8 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 ### 安全审计
 - ❌ 禁止主 agent 自己做安全审计
 - ✅ spawn security / security-check / centralized 子代理，按 **security-audit-pipeline** Skill 流程执行
+- ❌ 禁止在 spawn prompt 中替子代理指定工具调用顺序（子代理自己按 AGENTS.md 的原子流程执行）
+- ✅ 主 agent 只负责：告知项目路径 + 报告产出路径
 
 ### 自动化测试
 - ✅ spawn tester 子代理，按 **autotest-mcp** Skill 流程执行
