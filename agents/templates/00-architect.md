@@ -71,13 +71,14 @@
 # SEC-2: 钱流+攻击矩阵 → {dir}/test-reports/SECURITY_REVIEW_P2.md
 # SEC-3: 签名+跨链+升级 → {dir}/test-reports/SECURITY_REVIEW_P3.md
 架构师合并为 SECURITY_REVIEW_REPORT.md
+> 子代理按 AGENTS.md 原子工具流程执行，不指定具体工具名。
 ```
 
 **Security-Check（合约项目）：**
 ```
 项目根目录: {dir}
 产出: {dir}/test-reports/SECURITY_SCAN_REPORT.md
-> 严格按你的 AGENTS.md + skill 执行。分步写入。
+> 子代理自行读项目 → 判断 forge/hardhat → 逐个调原子工具。
 ```
 
 **Security-Check-Centralized（中心化项目）：**
